@@ -90,7 +90,16 @@ pub async fn chat_completions(
             session,
             api_client,
             tool_executor,
-            PermissionPolicy::new(permission_mode),
+            PermissionPolicy::new(permission_mode)
+                .with_tool_requirement("glob_search", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("grep_search", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("list_dir", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("view_file", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("TodoWrite", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("execute_bash", runtime::PermissionMode::DangerFullAccess)
+                .with_tool_requirement("write_to_file", runtime::PermissionMode::WorkspaceWrite)
+                .with_tool_requirement("replace_file_content", runtime::PermissionMode::WorkspaceWrite)
+                .with_tool_requirement("multi_replace_file_content", runtime::PermissionMode::WorkspaceWrite),
             system_prompts,
         )
         .with_max_iterations(max_iters);
