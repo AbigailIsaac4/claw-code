@@ -17,6 +17,8 @@ const { TextArea } = Input;
 const { Text } = Typography;
 
 const generateId = () => `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://10.50.70.91:18008';
+const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
 interface ToolCall {
   id: string;
@@ -83,7 +85,7 @@ export default function ChatPage() {
   const loadSkills = async () => {
     setSkillsLoading(true);
     try {
-      const res = await fetch('http://10.50.70.91:18008/v1/skills');
+      const res = await fetch(apiUrl('/v1/skills'));
       const data = await res.json();
       if (data.status === 'success') setSkills(data.data);
     } catch (err) {
@@ -144,7 +146,12 @@ export default function ChatPage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://10.50.70.91:18008/v1/sandbox/upload', {
+      if (!activeSessionId) {
+        message.error({ content: '请先创建或选择会话', key: 'upload' });
+        return;
+      }
+      const params = new URLSearchParams({ session_id: activeSessionId });
+      const res = await fetch(apiUrl(`/v1/sandbox/upload?${params.toString()}`), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('claw_token')}`
@@ -177,7 +184,12 @@ export default function ChatPage() {
     
     message.loading({ content: '正在从沙箱拉取文件...', key: 'download' });
     try {
-      const res = await fetch(`http://10.50.70.91:18008/v1/sandbox/download?path=${filename}`, {
+      if (!activeSessionId) {
+        message.error({ content: '请先创建或选择会话', key: 'download' });
+        return;
+      }
+      const params = new URLSearchParams({ path: filename, session_id: activeSessionId });
+      const res = await fetch(apiUrl(`/v1/sandbox/download?${params.toString()}`), {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('claw_token')}` }
       });
       if (!res.ok) {
@@ -200,7 +212,7 @@ export default function ChatPage() {
 
   const loadSessions = async (authToken: string) => {
     try {
-      const res = await fetch('http://10.50.70.91:18008/v1/sessions', {
+      const res = await fetch(apiUrl('/v1/sessions'), {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (!res.ok) {
@@ -221,7 +233,7 @@ export default function ChatPage() {
 
   const loadSessionDetail = async (id: string, authToken: string, sessionList: any[]) => {
     try {
-      const res = await fetch(`http://10.50.70.91:18008/v1/sessions/${id}`, {
+      const res = await fetch(apiUrl(`/v1/sessions/${id}`), {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (res.ok) {
@@ -309,7 +321,7 @@ export default function ChatPage() {
     if (!email || !password) return message.warning('请输入邮箱和密码');
     setLoginLoading(true);
     try {
-      const res = await fetch('http://10.50.70.91:18008/v1/auth/login', {
+      const res = await fetch(apiUrl('/v1/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -352,7 +364,7 @@ export default function ChatPage() {
   const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await fetch(`http://10.50.70.91:18008/v1/sessions/${id}`, {
+      await fetch(apiUrl(`/v1/sessions/${id}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('claw_token')}` }
       });
@@ -388,7 +400,7 @@ export default function ChatPage() {
   const handleResolveAction = async (allow: boolean) => {
     if (!actionReq || !token) return;
     try {
-      await fetch('http://10.50.70.91:18008/v1/chat/resolve_action', {
+      await fetch(apiUrl('/v1/chat/resolve_action'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -429,7 +441,7 @@ export default function ChatPage() {
     const ctrl = new AbortController();
 
     try {
-      await fetchEventSource('http://10.50.70.91:18008/v1/chat/completions', {
+      await fetchEventSource(apiUrl('/v1/chat/completions'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -585,15 +597,15 @@ export default function ChatPage() {
         avatar={<Avatar size={40} style={{ background: '#1677ff', color: '#fff' }}>U</Avatar>}
         topActions={
           <>
-            <ActionIcon icon={MessageOutlined} title="会话" active placement="right" />
+            <ActionIcon icon={MessageOutlined} title="会话" active />
           </>
         }
         bottomActions={
           <>
-            <ActionIcon icon={PlusOutlined} title="新会话" onClick={createNewSession} placement="right" />
-            <ActionIcon icon={RobotOutlined} title="技能库中心" onClick={() => setShowSkillsModal(true)} placement="right" />
-            <ActionIcon icon={SettingOutlined} title="系统设置" onClick={() => setShowSettings(true)} placement="right" />
-            <ActionIcon icon={UserOutlined} title="退出" onClick={handleLogout} placement="right" />
+            <ActionIcon icon={PlusOutlined} title="新会话" onClick={createNewSession} />
+            <ActionIcon icon={RobotOutlined} title="技能库中心" onClick={() => setShowSkillsModal(true)} />
+            <ActionIcon icon={SettingOutlined} title="系统设置" onClick={() => setShowSettings(true)} />
+            <ActionIcon icon={UserOutlined} title="退出" onClick={handleLogout} />
           </>
         }
         style={{ borderRight: '1px solid rgba(0,0,0,0.06)', zIndex: 100 }}

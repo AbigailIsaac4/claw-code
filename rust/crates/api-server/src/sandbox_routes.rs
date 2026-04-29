@@ -1,13 +1,13 @@
-use axum::{
-    extract::{Multipart, State, Query},
-    Json,
-    response::IntoResponse,
-    http::StatusCode,
-};
-use serde::{Deserialize, Serialize};
-use crate::state::AppState;
 use crate::auth::AuthUser;
-use base64::{Engine as _, engine::general_purpose::STANDARD as b64};
+use crate::sandbox_client::sanitize_workspace_path;
+use crate::state::AppState;
+use axum::{
+    extract::{Multipart, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct DownloadQuery {
@@ -20,30 +20,56 @@ pub struct UploadQuery {
     session_id: Option<String>,
 }
 
+fn require_session_id(session_id: &Option<String>) -> Result<String, (StatusCode, String)> {
+    session_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "session_id is required for sandbox file operations".to_string(),
+            )
+        })
+}
+
 pub async fn upload_file(
     user: AuthUser,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(query): Query<UploadQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let session_id = query.session_id.clone().unwrap_or_else(|| "default".to_string());
-    let base_dir = std::env::var("WORKSPACE_BASE_DIR").unwrap_or_else(|_| "./data/workspaces".to_string());
-    let workspace_dir = std::path::Path::new(&base_dir).join(&user.user_id).join(&session_id);
-
-    tokio::fs::create_dir_all(&workspace_dir).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create workspace: {}", e)))?;
+    let session_id = require_session_id(&query.session_id)?;
+    let sandbox_id = state
+        .ensure_sandbox_id(&user.user_id, &session_id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to create sandbox: {e}"),
+            )
+        })?;
 
     let mut uploaded_files = vec![];
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let file_name = field.file_name().unwrap_or("unnamed").to_string();
-        let data = field.bytes().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-        
-        let file_path = workspace_dir.join(&file_name);
-        tokio::fs::write(&file_path, data).await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file: {}", e)))?;
-            
-        let remote_path = format!("/workspace/{}", file_name);
+        let data = field
+            .bytes()
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+        let remote_path = state
+            .sandbox_client
+            .upload_file_bytes(&sandbox_id, &file_name, &data)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Failed to upload file to sandbox: {e}"),
+                )
+            })?;
         uploaded_files.push(remote_path);
     }
 
@@ -55,18 +81,32 @@ pub async fn upload_file(
 
 pub async fn download_file(
     user: AuthUser,
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(query): Query<DownloadQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let session_id = query.session_id.clone().unwrap_or_else(|| "default".to_string());
-    let base_dir = std::env::var("WORKSPACE_BASE_DIR").unwrap_or_else(|_| "./data/workspaces".to_string());
-    
-    // The path from frontend might be `/workspace/filename.txt`
-    let filename = query.path.strip_prefix("/workspace/").unwrap_or(&query.path);
-    let file_path = std::path::Path::new(&base_dir).join(&user.user_id).join(&session_id).join(filename);
+    let session_id = require_session_id(&query.session_id)?;
+    let workspace_path =
+        sanitize_workspace_path(&query.path).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let sandbox_id = state
+        .ensure_sandbox_id(&user.user_id, &session_id)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to create sandbox: {e}"),
+            )
+        })?;
 
-    let decoded = tokio::fs::read(&file_path).await
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("File not found locally: {}", e)))?;
+    let decoded = state
+        .sandbox_client
+        .download_file_bytes(&sandbox_id, &workspace_path.remote_path)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("File not found in sandbox: {e}"),
+            )
+        })?;
 
     // Guess content type
     let content_type = if query.path.ends_with(".png") {
@@ -79,12 +119,19 @@ pub async fn download_file(
         "application/octet-stream"
     };
 
-    let filename_str = file_path.file_name().unwrap_or_default().to_string_lossy();
+    let filename_str = workspace_path
+        .relative_path
+        .rsplit('/')
+        .next()
+        .unwrap_or("download");
 
     use axum::http::header;
     let headers = [
         (header::CONTENT_TYPE, content_type.to_string()),
-        (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename_str)),
+        (
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename_str),
+        ),
     ];
 
     Ok((headers, decoded))

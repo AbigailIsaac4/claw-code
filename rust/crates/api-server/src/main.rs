@@ -1,20 +1,20 @@
-mod chat;
-mod state;
-mod runtime_bridge;
-mod db;
 mod auth;
+mod chat;
+mod db;
+mod runtime_bridge;
 mod sandbox_client;
 mod sandbox_routes;
 mod skills;
+mod state;
 
+use axum::extract::DefaultBodyLimit;
 use axum::{
-    routing::{get, post, delete},
+    routing::{get, post},
     Router,
 };
 use state::AppState;
 use std::net::SocketAddr;
-use tower_http::cors::{Any, CorsLayer};
-use axum::extract::DefaultBodyLimit;
+use tower_http::cors::CorsLayer;
 
 #[tokio::main]
 async fn main() {
@@ -24,13 +24,13 @@ async fn main() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,api_server=debug")),
         )
         .init();
-    
+
     // 加载 .env 环境变量
     dotenvy::dotenv().ok();
-    
+
     // 初始化数据库 (3.1)
     let pool = db::init_db().await.expect("Failed to initialize database");
-    
+
     let state = AppState::new(pool);
 
     let cors = CorsLayer::new()
@@ -45,7 +45,10 @@ async fn main() {
         .route("/v1/chat/completions", post(chat::chat_completions))
         .route("/v1/chat/resolve_action", post(chat::resolve_action))
         .route("/v1/sessions", get(chat::list_sessions))
-        .route("/v1/sessions/:id", get(chat::get_session).delete(chat::delete_session))
+        .route(
+            "/v1/sessions/:id",
+            get(chat::get_session).delete(chat::delete_session),
+        )
         .route("/v1/sandbox/upload", post(sandbox_routes::upload_file))
         .route("/v1/sandbox/download", get(sandbox_routes::download_file))
         .route("/v1/skills", get(skills::list_skills))
@@ -53,10 +56,13 @@ async fn main() {
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit
         .with_state(state);
 
-    let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse().unwrap_or(3000);
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "3000".to_string())
+        .parse()
+        .unwrap_or(3000);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Server listening on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

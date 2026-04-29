@@ -14,7 +14,7 @@ pub struct SkillInfo {
 pub async fn list_skills() -> Json<Value> {
     let mut skills_list = Vec::new();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    
+
     // Try current dir first, then parent (if running from within /rust)
     let mut skills_dir = cwd.join("assets").join("skills");
     if !skills_dir.exists() {
@@ -28,7 +28,11 @@ pub async fn list_skills() -> Json<Value> {
                 let skill_file = path.join("SKILL.md");
                 if skill_file.is_file() {
                     if let Ok(content) = fs::read_to_string(&skill_file) {
-                        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let name = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
                         let mut desc = "No description available.".to_string();
                         for line in content.lines() {
                             if line.starts_with("description: ") {

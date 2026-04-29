@@ -1,9 +1,8 @@
 use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
 
-
 pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
     use sqlx::sqlite::SqliteConnectOptions;
-    
+
     let options = SqliteConnectOptions::new()
         .filename("claw_agent.db")
         .create_if_missing(true);
@@ -13,7 +12,7 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
         .max_connections(5)
         .connect_with(options)
         .await?;
-        
+
     // 自动执行建表语句（3.1 数据库结构设计）
     sqlx::query(
         r#"
@@ -42,7 +41,7 @@ pub async fn init_db() -> Result<SqlitePool, sqlx::Error> {
             preferences JSON,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
-        "#
+        "#,
     )
     .execute(&pool)
     .await?;

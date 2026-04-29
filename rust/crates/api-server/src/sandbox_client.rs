@@ -1,4 +1,5 @@
-use reqwest::{Client, header};
+use base64::{engine::general_purpose::STANDARD as b64, Engine as _};
+use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
@@ -9,6 +10,78 @@ pub struct OpenSandboxClient {
     client: Client,
     /// Lifecycle API base URL, e.g. "http://10.50.70.91:28080/v1"
     base_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspacePath {
+    pub relative_path: String,
+    pub remote_path: String,
+}
+
+pub(crate) fn sanitize_workspace_path(input: &str) -> Result<WorkspacePath, String> {
+    let normalized = input.trim().replace('\\', "/");
+    let relative = normalized
+        .strip_prefix("/workspace/")
+        .or_else(|| normalized.strip_prefix("workspace/"))
+        .unwrap_or(&normalized);
+
+    if relative.is_empty() || relative.starts_with('/') {
+        return Err("workspace path must name a file under /workspace".to_string());
+    }
+
+    let mut parts = Vec::new();
+    for part in relative.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." || part.contains('\0') || part.contains(':') {
+            return Err(format!("workspace path escapes /workspace: {input}"));
+        }
+        parts.push(part);
+    }
+
+    if parts.is_empty() {
+        return Err("workspace path must name a file under /workspace".to_string());
+    }
+
+    let relative_path = parts.join("/");
+    Ok(WorkspacePath {
+        remote_path: format!("/workspace/{relative_path}"),
+        relative_path,
+    })
+}
+
+pub(crate) fn shell_quote(input: &str) -> String {
+    format!("'{}'", input.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sanitize_workspace_path, shell_quote};
+
+    #[test]
+    fn sanitize_workspace_path_rejects_workspace_escape() {
+        assert!(sanitize_workspace_path("/workspace/../secret.txt").is_err());
+        assert!(sanitize_workspace_path("../../secret.txt").is_err());
+        assert!(sanitize_workspace_path("C:\\temp\\secret.txt").is_err());
+    }
+
+    #[test]
+    fn sanitize_workspace_path_normalizes_workspace_paths() {
+        let path = sanitize_workspace_path("/workspace/reports/result.txt")
+            .expect("workspace path should be accepted");
+
+        assert_eq!(path.relative_path, "reports/result.txt");
+        assert_eq!(path.remote_path, "/workspace/reports/result.txt");
+    }
+
+    #[test]
+    fn shell_quote_handles_single_quotes() {
+        assert_eq!(
+            shell_quote("/workspace/a'b.txt"),
+            "'/workspace/a'\\''b.txt'"
+        );
+    }
 }
 
 // ─────────────────────── Create Sandbox ───────────────────────
@@ -93,7 +166,8 @@ impl OpenSandboxClient {
         // OpenSandbox uses a custom header, NOT "Authorization: Bearer ..."
         headers.insert(
             "OPEN-SANDBOX-API-KEY",
-            header::HeaderValue::from_str(&api_key).unwrap_or_else(|_| header::HeaderValue::from_static("")),
+            header::HeaderValue::from_str(&api_key)
+                .unwrap_or_else(|_| header::HeaderValue::from_static("")),
         );
 
         let client = Client::builder()
@@ -109,7 +183,11 @@ impl OpenSandboxClient {
 
     /// Create a new sandbox container and wait for it to become ready.
     /// Returns `sandbox_id`.
-    pub async fn create_sandbox(&self, user_id: &str, session_id: Option<String>) -> Result<String, String> {
+    pub async fn create_sandbox(
+        &self,
+        user_id: &str,
+        session_id: Option<String>,
+    ) -> Result<String, String> {
         let template = env::var("SANDBOX_TEMPLATE").unwrap_or_else(|_| "base".to_string());
         let timeout_secs: u64 = env::var("SANDBOX_TIMEOUT_SECS")
             .ok()
@@ -117,7 +195,10 @@ impl OpenSandboxClient {
             .unwrap_or(4200); // 70 minutes default
 
         let mut metadata = serde_json::Map::new();
-        metadata.insert("user_id".into(), serde_json::Value::String(user_id.to_string()));
+        metadata.insert(
+            "user_id".into(),
+            serde_json::Value::String(user_id.to_string()),
+        );
         if let Some(sid) = &session_id {
             metadata.insert("session_id".into(), serde_json::Value::String(sid.clone()));
         }
@@ -131,20 +212,34 @@ impl OpenSandboxClient {
             },
             entrypoint: vec!["tail".into(), "-f".into(), "/dev/null".into()],
             timeout: Some(timeout_secs),
-            metadata: if metadata.is_empty() { None } else { Some(Value::Object(metadata)) },
+            metadata: if metadata.is_empty() {
+                None
+            } else {
+                Some(Value::Object(metadata))
+            },
         };
 
         tracing::info!("Creating sandbox: POST {}", url);
-        let res = self.client.post(&url).json(&req).send().await
+        let res = self
+            .client
+            .post(&url)
+            .json(&req)
+            .send()
+            .await
             .map_err(|e| format!("Sandbox create request failed: {}", e))?;
 
         let status = res.status();
         if !status.is_success() && status.as_u16() != 202 {
             let body = res.text().await.unwrap_or_default();
-            return Err(format!("Failed to create sandbox (HTTP {}): {}", status, body));
+            return Err(format!(
+                "Failed to create sandbox (HTTP {}): {}",
+                status, body
+            ));
         }
 
-        let data: CreateSandboxRes = res.json().await
+        let data: CreateSandboxRes = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse sandbox creation response: {}", e))?;
 
         tracing::info!("Sandbox created: {}", data.sandbox_id);
@@ -170,29 +265,51 @@ impl OpenSandboxClient {
         );
         tracing::debug!("Resolving execd endpoint: GET {}", url);
 
-        let res = self.client.get(&url).send().await
+        let res = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| format!("Failed to resolve execd endpoint: {}", e))?;
 
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
-            return Err(format!("Failed to get execd endpoint (HTTP {}): {}", status, body));
+            return Err(format!(
+                "Failed to get execd endpoint (HTTP {}): {}",
+                status, body
+            ));
         }
 
-        let endpoint: EndpointRes = res.json().await
+        let endpoint: EndpointRes = res
+            .json()
+            .await
             .map_err(|e| format!("Failed to parse endpoint response: {}", e))?;
 
         // endpoint is usually like "10.0.0.12:43555" or "0.0.0.0:43555".
         // If api-server is running on a different machine (e.g. Windows), it cannot reach 10.0.0.12 or 0.0.0.0.
         // We extract the port and combine it with the known reachable host of self.base_url.
-        let parsed_base = reqwest::Url::parse(&self.base_url)
-            .map_err(|e| format!("Invalid base_url: {}", e))?;
-        
-        let port = endpoint.endpoint.split(':').last().unwrap_or(&endpoint.endpoint);
-        
-        let final_url = format!("{}://{}:{}", parsed_base.scheme(), parsed_base.host_str().unwrap_or("127.0.0.1"), port);
-        
-        tracing::debug!("Rewrote returned endpoint {} to {}", endpoint.endpoint, final_url);
+        let parsed_base =
+            reqwest::Url::parse(&self.base_url).map_err(|e| format!("Invalid base_url: {}", e))?;
+
+        let port = endpoint
+            .endpoint
+            .split(':')
+            .next_back()
+            .unwrap_or(&endpoint.endpoint);
+
+        let final_url = format!(
+            "{}://{}:{}",
+            parsed_base.scheme(),
+            parsed_base.host_str().unwrap_or("127.0.0.1"),
+            port
+        );
+
+        tracing::debug!(
+            "Rewrote returned endpoint {} to {}",
+            endpoint.endpoint,
+            final_url
+        );
 
         Ok(final_url)
     }
@@ -205,9 +322,12 @@ impl OpenSandboxClient {
                 Ok(execd_url) => {
                     // Try a health ping
                     let health_url = format!("{}/ping", execd_url.trim_end_matches('/'));
-                    match self.client.get(&health_url)
+                    match self
+                        .client
+                        .get(&health_url)
                         .timeout(Duration::from_secs(5))
-                        .send().await
+                        .send()
+                        .await
                     {
                         Ok(r) if r.status().is_success() => {
                             tracing::info!("Sandbox {} is ready (attempt {})", sandbox_id, attempt);
@@ -217,19 +337,38 @@ impl OpenSandboxClient {
                             let status = r.status();
                             let body = r.text().await.unwrap_or_default();
                             if attempt % 10 == 1 {
-                                tracing::info!("Sandbox {} health check attempt {}/{}: HTTP {} - {}", sandbox_id, attempt, max_attempts, status, &body[..body.len().min(120)]);
+                                tracing::info!(
+                                    "Sandbox {} health check attempt {}/{}: HTTP {} - {}",
+                                    sandbox_id,
+                                    attempt,
+                                    max_attempts,
+                                    status,
+                                    &body[..body.len().min(120)]
+                                );
                             }
                         }
                         Err(e) => {
                             if attempt % 10 == 1 {
-                                tracing::info!("Sandbox {} health check attempt {}/{}: {}", sandbox_id, attempt, max_attempts, e);
+                                tracing::info!(
+                                    "Sandbox {} health check attempt {}/{}: {}",
+                                    sandbox_id,
+                                    attempt,
+                                    max_attempts,
+                                    e
+                                );
                             }
                         }
                     }
                 }
                 Err(e) => {
                     if attempt % 10 == 1 {
-                        tracing::warn!("Sandbox {} endpoint resolution failed (attempt {}/{}): {}", sandbox_id, attempt, max_attempts, e);
+                        tracing::warn!(
+                            "Sandbox {} endpoint resolution failed (attempt {}/{}): {}",
+                            sandbox_id,
+                            attempt,
+                            max_attempts,
+                            e
+                        );
                     }
                 }
             }
@@ -238,7 +377,12 @@ impl OpenSandboxClient {
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         }
-        Err(format!("Sandbox {} did not become ready after {} attempts (~{}s)", sandbox_id, max_attempts, max_attempts * 2))
+        Err(format!(
+            "Sandbox {} did not become ready after {} attempts (~{}s)",
+            sandbox_id,
+            max_attempts,
+            max_attempts * 2
+        ))
     }
 
     // ────────── Execd: Execute Command ──────────
@@ -280,21 +424,115 @@ impl OpenSandboxClient {
 
         tracing::debug!("Executing command in sandbox {}: {}", sandbox_id, command);
 
-        let res = self.client.post(&cmd_url)
+        let res = self
+            .client
+            .post(&cmd_url)
             .json(&req)
-            .timeout(Duration::from_secs(timeout_ms.map(|ms| ms / 1000 + 10).unwrap_or(600)))
-            .send().await
+            .timeout(Duration::from_secs(
+                timeout_ms.map(|ms| ms / 1000 + 10).unwrap_or(600),
+            ))
+            .send()
+            .await
             .map_err(|e| format!("Command execution request failed: {}", e))?;
 
         let status = res.status();
         if !status.is_success() {
             let body = res.text().await.unwrap_or_default();
-            return Err(format!("Command execution failed (HTTP {}): {}", status, body));
+            return Err(format!(
+                "Command execution failed (HTTP {}): {}",
+                status, body
+            ));
         }
 
         // Parse SSE stream from response body
         let body = res.text().await.unwrap_or_default();
         self.parse_command_sse(&body)
+    }
+
+    pub async fn upload_file_bytes(
+        &self,
+        sandbox_id: &str,
+        workspace_path: &str,
+        data: &[u8],
+    ) -> Result<String, String> {
+        let path = sanitize_workspace_path(workspace_path)?;
+        let parent = path
+            .remote_path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("/workspace");
+        let temp_path = format!("/tmp/claw-upload-{}.b64", uuid::Uuid::new_v4());
+        let init = format!(
+            "mkdir -p -- {} && : > {}",
+            shell_quote(parent),
+            shell_quote(&temp_path)
+        );
+        self.execute_checked(sandbox_id, &init, None).await?;
+
+        let encoded = b64.encode(data);
+        for chunk in encoded.as_bytes().chunks(60_000) {
+            let chunk = std::str::from_utf8(chunk)
+                .map_err(|e| format!("Failed to encode upload chunk: {e}"))?;
+            let append = format!(
+                "printf '%s' {} >> {}",
+                shell_quote(chunk),
+                shell_quote(&temp_path)
+            );
+            if let Err(error) = self.execute_checked(sandbox_id, &append, None).await {
+                let _ = self
+                    .execute_checked(
+                        sandbox_id,
+                        &format!("rm -f -- {}", shell_quote(&temp_path)),
+                        None,
+                    )
+                    .await;
+                return Err(error);
+            }
+        }
+
+        let finalize = format!(
+            "base64 -d {} > {} && rm -f -- {}",
+            shell_quote(&temp_path),
+            shell_quote(&path.remote_path),
+            shell_quote(&temp_path)
+        );
+        self.execute_checked(sandbox_id, &finalize, None).await?;
+
+        Ok(path.remote_path)
+    }
+
+    pub async fn download_file_bytes(
+        &self,
+        sandbox_id: &str,
+        workspace_path: &str,
+    ) -> Result<Vec<u8>, String> {
+        let path = sanitize_workspace_path(workspace_path)?;
+        let command = format!("base64 {}", shell_quote(&path.remote_path));
+        let output = self.execute_checked(sandbox_id, &command, None).await?;
+        let encoded = output
+            .stdout
+            .chars()
+            .filter(|ch| !ch.is_ascii_whitespace())
+            .collect::<String>();
+        b64.decode(encoded.as_bytes())
+            .map_err(|e| format!("Failed to decode sandbox file {}: {e}", path.remote_path))
+    }
+
+    async fn execute_checked(
+        &self,
+        sandbox_id: &str,
+        command: &str,
+        timeout_ms: Option<u64>,
+    ) -> Result<ExecCommandRes, String> {
+        let output = self.execute_bash(sandbox_id, command, timeout_ms).await?;
+        if output.exit_code == 0 {
+            return Ok(output);
+        }
+
+        Err(format!(
+            "Sandbox command failed with exit code {}: {}{}",
+            output.exit_code, output.stderr, output.stdout
+        ))
     }
 
     /// Parse the SSE response from the execd /command endpoint.
@@ -339,12 +577,16 @@ impl OpenSandboxClient {
             }
 
             let Ok(v) = serde_json::from_str::<Value>(data_str) else {
-                tracing::debug!("Skipping unparseable SSE data: {}", &data_str[..data_str.len().min(100)]);
+                tracing::debug!(
+                    "Skipping unparseable SSE data: {}",
+                    &data_str[..data_str.len().min(100)]
+                );
                 continue;
             };
 
             // Determine event type: prefer "type" field in JSON, fall back to event: line
-            let event_type = v.get("type")
+            let event_type = v
+                .get("type")
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| current_event.clone());
@@ -378,7 +620,11 @@ impl OpenSandboxClient {
                 }
                 "result" | "complete" => {
                     // Legacy format: {"exitCode": 0}
-                    if let Some(code) = v.get("exitCode").or(v.get("exit_code")).and_then(|c| c.as_i64()) {
+                    if let Some(code) = v
+                        .get("exitCode")
+                        .or(v.get("exit_code"))
+                        .and_then(|c| c.as_i64())
+                    {
                         exit_code = code as i32;
                     }
                 }
@@ -398,7 +644,10 @@ impl OpenSandboxClient {
         // If we got neither an explicit error nor a completion event, and there's
         // no stdout/stderr at all, the command may have failed silently
         if !got_error && !got_complete && stdout_parts.is_empty() && stderr_parts.is_empty() {
-            tracing::warn!("No output events received from execd; raw body length = {}", body.len());
+            tracing::warn!(
+                "No output events received from execd; raw body length = {}",
+                body.len()
+            );
         }
 
         Ok(ExecCommandRes {
@@ -413,14 +662,22 @@ impl OpenSandboxClient {
     /// Extend the sandbox lifetime.
     #[allow(dead_code)]
     pub async fn renew_sandbox(&self, sandbox_id: &str, timeout_secs: u64) -> Result<(), String> {
-        let url = format!("{}/sandboxes/{}/renew-expiration", self.base_url, sandbox_id);
+        let url = format!(
+            "{}/sandboxes/{}/renew-expiration",
+            self.base_url, sandbox_id
+        );
         let new_expiration = chrono::Utc::now() + chrono::Duration::seconds(timeout_secs as i64);
 
         let body = serde_json::json!({
             "expiresAt": new_expiration.to_rfc3339()
         });
 
-        let res = self.client.post(&url).json(&body).send().await
+        let res = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
             .map_err(|e| format!("Renew sandbox failed: {}", e))?;
 
         let status = res.status();
@@ -439,7 +696,11 @@ impl OpenSandboxClient {
     pub async fn kill_sandbox(&self, sandbox_id: &str) -> Result<(), String> {
         let url = format!("{}/sandboxes/{}", self.base_url, sandbox_id);
 
-        let res = self.client.delete(&url).send().await
+        let res = self
+            .client
+            .delete(&url)
+            .send()
+            .await
             .map_err(|e| format!("Kill sandbox failed: {}", e))?;
 
         let status = res.status();

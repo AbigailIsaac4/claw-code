@@ -2,7 +2,6 @@ use axum::{
     async_trait,
     extract::{FromRequestParts, State},
     http::{request::Parts, StatusCode},
-    response::IntoResponse,
     Json,
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
@@ -51,13 +50,14 @@ pub async fn register(
 
     let user_id = Uuid::new_v4().to_string();
 
-    let result = sqlx::query("INSERT INTO users (id, email, full_name, password_hash) VALUES (?, ?, ?, ?)")
-        .bind(&user_id)
-        .bind(&payload.email)
-        .bind(&full_name)
-        .bind(&password_hash)
-        .execute(&state.db)
-        .await;
+    let result =
+        sqlx::query("INSERT INTO users (id, email, full_name, password_hash) VALUES (?, ?, ?, ?)")
+            .bind(&user_id)
+            .bind(&payload.email)
+            .bind(&full_name)
+            .bind(&password_hash)
+            .execute(&state.db)
+            .await;
 
     if result.is_err() {
         return Err((StatusCode::BAD_REQUEST, "该邮箱已被注册".into()));
@@ -111,8 +111,12 @@ fn create_jwt(user_id: &str) -> Result<String, (StatusCode, String)> {
         exp: expiration,
     };
 
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(JWT_SECRET))
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "令牌生成失败".into()))
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(JWT_SECRET),
+    )
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "令牌生成失败".into()))
 }
 
 // 用于受保护路由的 JWT 验证 Extractor

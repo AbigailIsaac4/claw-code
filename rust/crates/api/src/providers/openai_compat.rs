@@ -327,8 +327,9 @@ fn jitter_for_base(base: Duration) -> Duration {
     }
     let raw_nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|elapsed| u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX))
-        .unwrap_or(0);
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX)
+        });
     let tick = JITTER_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut mixed = raw_nanos
         .wrapping_add(tick)
@@ -941,7 +942,9 @@ pub fn model_rejects_is_error_field(model: &str) -> bool {
     let canonical = lowered.rsplit('/').next().unwrap_or(lowered.as_str());
     // kimi models (kimi-k2.5, kimi-k1.5, kimi-moonshot, etc.)
     // qwen models
-    canonical.starts_with("kimi") || canonical.starts_with("qwen") || canonical.starts_with("deepseek")
+    canonical.starts_with("kimi")
+        || canonical.starts_with("qwen")
+        || canonical.starts_with("deepseek")
 }
 
 /// Translates an `InputMessage` into OpenAI-compatible message format.

@@ -41,7 +41,7 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
               
               let parsedCommand = tool.input;
               if (isBash) {
-                try { parsedCommand = JSON.parse(tool.input).command; } catch(e) {}
+                try { parsedCommand = JSON.parse(tool.input).command; } catch {}
               }
 
               let parsedResult = tool.result || '';
@@ -49,7 +49,7 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
                 try {
                   const res = JSON.parse(tool.result);
                   parsedResult = (res.stdout || '') + (res.stderr ? '\n[stderr]\n' + res.stderr : '');
-                } catch(e) {}
+                } catch {}
               }
 
               return (
@@ -74,7 +74,7 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
                       {parsedResult && (
                         <>
                           <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>输出:</div>
-                          <Highlighter language="bash" type="block" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                          <Highlighter language="bash" style={{ maxHeight: 300, overflowY: 'auto' }}>
                             {parsedResult}
                           </Highlighter>
                         </>
@@ -90,7 +90,7 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
                       {tool.result && (
                         <>
                           <div style={{ color: '#888', marginTop: 12, marginBottom: 8 }}>执行结果:</div>
-                          <Highlighter language="json" type="block" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                          <Highlighter language="json" style={{ maxHeight: 200, overflowY: 'auto' }}>
                             {tool.result.substring(0, 1000) + (tool.result.length > 1000 ? '\n...[已省略长输出]' : '')}
                           </Highlighter>
                         </>
