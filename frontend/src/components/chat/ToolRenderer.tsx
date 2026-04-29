@@ -1,6 +1,7 @@
 import React from 'react';
 import { Collapse, Typography } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
+import { Highlighter } from '@lobehub/ui';
 
 const { Text } = Typography;
 
@@ -67,27 +68,31 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
                   </div>
                   
                   {isBash ? (
-                    <div style={{ background: '#0d1117', padding: 16, fontFamily: 'ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace', fontSize: 13, borderRadius: 0 }}>
-                      <div style={{ color: '#3fb950', marginBottom: 8 }}>$ {parsedCommand}</div>
+                    <div style={{ padding: 12 }}>
+                      <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>命令:</div>
+                      <Highlighter language="bash" style={{ marginBottom: 8 }}>{parsedCommand}</Highlighter>
                       {parsedResult && (
-                        <div style={{ color: '#ccc', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 300, overflowY: 'auto' }}>
-                          {parsedResult}
-                        </div>
+                        <>
+                          <div style={{ marginBottom: 8, fontSize: 13, color: '#888' }}>输出:</div>
+                          <Highlighter language="bash" type="block" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                            {parsedResult}
+                          </Highlighter>
+                        </>
                       )}
                       {tool.error && (
-                        <div style={{ color: '#ff4d4f', whiteSpace: 'pre-wrap' }}>{tool.error}</div>
+                        <div style={{ color: '#ff4d4f', whiteSpace: 'pre-wrap', marginTop: 8 }}>{tool.error}</div>
                       )}
                     </div>
                   ) : (
                     <div style={{ padding: 16, background: '#fff', fontSize: 13 }}>
                       <div style={{ color: '#888', marginBottom: 8 }}>输入参数:</div>
-                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap', background: '#f8f9fa', padding: 12, border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8 }}>{tool.input}</pre>
+                      <Highlighter language="json">{tool.input}</Highlighter>
                       {tool.result && (
                         <>
                           <div style={{ color: '#888', marginTop: 12, marginBottom: 8 }}>执行结果:</div>
-                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', background: '#f8f9fa', padding: 12, border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8, maxHeight: 200, overflowY: 'auto' }}>
+                          <Highlighter language="json" type="block" style={{ maxHeight: 200, overflowY: 'auto' }}>
                             {tool.result.substring(0, 1000) + (tool.result.length > 1000 ? '\n...[已省略长输出]' : '')}
-                          </pre>
+                          </Highlighter>
                         </>
                       )}
                       {tool.error && <div style={{ color: '#ff4d4f', marginTop: 8 }}>{tool.error}</div>}

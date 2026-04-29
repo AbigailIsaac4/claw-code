@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { Button, Input, Modal, Typography, Card, Space, Popconfirm, message, Avatar, Tooltip, Segmented, Popover, Collapse } from 'antd';
+import { Button, Input, Modal, Typography, Card, Space, Popconfirm, Avatar, Tooltip, Segmented, Popover, Collapse, App as AntdApp, Tag } from 'antd';
 import { Markdown, DraggablePanel, SideNav, ActionIcon, Header } from '@lobehub/ui';
 import { ChatList } from '@lobehub/ui/chat';
 import { SendOutlined, PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, PlayCircleOutlined, ShareAltOutlined } from '@ant-design/icons';
@@ -58,6 +58,7 @@ export default function ChatPage() {
   const [actionReq, setActionReq] = useState<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { message } = AntdApp.useApp();
 
   const [todos, setTodos] = useState<Todo[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
@@ -240,10 +241,10 @@ export default function ChatPage() {
             for (const block of msg.blocks || []) {
               if (block.type === 'text') content += block.text;
             }
-            messages.push({ id: Math.random().toString(), role: 'user', content });
+            messages.push({ id: crypto.randomUUID(), role: 'user', content });
           } else if (role === 'assistant') {
             if (!currentAssistant) {
-              currentAssistant = { id: Math.random().toString(), role: 'assistant', content: '', toolCalls: [] };
+              currentAssistant = { id: crypto.randomUUID(), role: 'assistant', content: '', toolCalls: [] };
             }
             for (const block of msg.blocks || []) {
               if (block.type === 'text') {
@@ -256,7 +257,7 @@ export default function ChatPage() {
                   } catch(e) {}
                 }
                 currentAssistant.toolCalls!.push({
-                  id: block.id || Math.random().toString(),
+                  id: block.id || crypto.randomUUID(),
                   name: block.name,
                   input: typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
                   status: 'running'
@@ -338,7 +339,7 @@ export default function ChatPage() {
 
   const createNewSession = () => {
     const newSession: Session = {
-      id: Date.now().toString() + '-' + Math.floor(Math.random() * 1000),
+      id: crypto.randomUUID(),
       title: '新的对话',
       messages: []
     };
@@ -359,7 +360,7 @@ export default function ChatPage() {
     setSessions(prev => {
       const next = prev.filter(s => s.id !== id);
       if (next.length === 0) {
-        const fresh = { id: Date.now().toString() + '-' + Math.floor(Math.random() * 1000), title: '新的对话', messages: [] };
+        const fresh = { id: crypto.randomUUID(), title: '新的对话', messages: [] };
         setActiveSessionId(fresh.id);
         return [fresh];
       }
@@ -411,15 +412,16 @@ export default function ChatPage() {
     if (uploadedFiles.length > 0) {
       finalInput += (finalInput ? '\n\n' : '') + '我已上传文件至沙箱路径：' + uploadedFiles.join('，') + '，请分析。';
     }
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: finalInput };
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: finalInput };
     setUploadedFiles([]);
     
     const messagesAfterUser = [...activeSession.messages, userMsg];
     updateSessionMessages(sessionId, messagesAfterUser);
+    
     setInput('');
     setLoading(true);
 
-    const assistantMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: '' };
+    const assistantMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: '' };
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
 
     const ctrl = new AbortController();
@@ -471,7 +473,7 @@ export default function ChatPage() {
                   const lastMsg = nextMsgs[nextMsgs.length - 1];
                   const inputStr = typeof data.input === 'string' ? data.input : JSON.stringify(data.input);
                   const newToolCall: ToolCall = {
-                    id: Math.random().toString(),
+                    id: crypto.randomUUID(),
                     name: data.tool,
                     input: inputStr,
                     status: 'running'
@@ -671,17 +673,20 @@ export default function ChatPage() {
       {/* 3. Main Chat Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', background: '#fff' }}>
         {/* Header */}
-        <div style={{ padding: '16px 24px', background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', whiteSpace: 'nowrap' }}>
-            <Text strong style={{ fontSize: 16 }}>{activeSession?.title}</Text>
-            <Text type="secondary" style={{ marginLeft: 16, fontSize: 12 }}>
-              {activeSession?.messages.length || 0} 条消息
-            </Text>
-          </div>
-          <Space style={{ whiteSpace: 'nowrap' }}>
-            <Tooltip title="分享会话">
+        <Header 
+          logo={
+            <div style={{ display: 'flex', alignItems: 'baseline', whiteSpace: 'nowrap', gap: 16 }}>
+              <Text strong style={{ fontSize: 16 }}>{activeSession?.title}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {activeSession?.messages.length || 0} 条消息
+              </Text>
+            </div>
+          }
+          actions={
+            <Space style={{ whiteSpace: 'nowrap' }}>
               <ActionIcon 
                 icon={ShareAltOutlined} 
+                title="分享会话"
                 onClick={async () => {
                   try {
                     const shareUrl = `${window.location.origin}/?session=${activeSession?.id}&share=true`;
@@ -692,9 +697,9 @@ export default function ChatPage() {
                   }
                 }} 
               />
-            </Tooltip>
-          </Space>
-        </div>
+            </Space>
+          }
+        />
 
         {/* Chat Area */}
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
@@ -713,7 +718,7 @@ export default function ChatPage() {
                     id: msg.id,
                     role: msg.role === 'user' ? 'user' : 'assistant',
                     content: msg.content || ' ',
-                    createAt: Date.now(),
+                    createAt: 0, // Avoid hydration mismatch
                     meta: {
                       avatar: msg.role === 'user' ? '🧑‍💻' : '🤖',
                       title: msg.role === 'user' ? 'You' : 'Claw Agent',
@@ -796,17 +801,16 @@ export default function ChatPage() {
           {uploadedFiles.length > 0 && (
             <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {uploadedFiles.map(f => (
-                <div key={f} style={{ background: '#e6f4ff', color: '#1677ff', padding: '4px 12px', borderRadius: 16, fontSize: 12, display: 'flex', alignItems: 'center' }}>
-                  <PaperClipOutlined style={{ marginRight: 4 }} /> {f.split('/').pop()}
-                  <Button 
-                    type="text" 
-                    size="small" 
-                    style={{ marginLeft: 4, padding: 0, height: 'auto', color: '#1677ff', background: 'transparent' }} 
-                    onClick={() => setUploadedFiles(prev => prev.filter(p => p !== f))}
-                  >
-                    ×
-                  </Button>
-                </div>
+                <Tag 
+                  key={f} 
+                  closable 
+                  onClose={() => setUploadedFiles(prev => prev.filter(p => p !== f))}
+                  icon={<PaperClipOutlined />}
+                  color="blue"
+                  style={{ padding: '4px 10px', borderRadius: 16, fontSize: 13 }}
+                >
+                  {f.split('/').pop()}
+                </Tag>
               ))}
             </div>
           )}
@@ -943,7 +947,7 @@ export default function ChatPage() {
             icon={<PlusOutlined />} 
             style={{ marginTop: 16 }}
             onClick={() => {
-              const newPlugin = { id: Date.now().toString(), name: '新插件 (配置中)', command: 'npx', args: '', active: false };
+              const newPlugin = { id: crypto.randomUUID(), name: '新插件 (配置中)', command: 'npx', args: '', active: false };
               setPlugins([...plugins, newPlugin]);
             }}
           >

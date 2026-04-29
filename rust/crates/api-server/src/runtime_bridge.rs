@@ -166,7 +166,11 @@ pub struct WebToolExecutor {
     pub session_id: String,
     pub sandbox_id: Option<String>,
     pub tool_registry: GlobalToolRegistry,
+    /// 连续 bash 错误计数器 — 防止 agent loop 无限重试沙箱命令
+    consecutive_bash_errors: u32,
 }
+
+const MAX_CONSECUTIVE_BASH_ERRORS: u32 = 3;
 
 impl WebToolExecutor {
     pub fn new(tx: Sender<Event>, user_id: String, session_id: String, sandbox_client: OpenSandboxClient) -> Self {
@@ -177,6 +181,7 @@ impl WebToolExecutor {
             session_id,
             sandbox_id: None,
             tool_registry: GlobalToolRegistry::builtin(),
+            consecutive_bash_errors: 0,
         }
     }
 
@@ -219,17 +224,45 @@ impl ToolExecutor for WebToolExecutor {
             tokio::runtime::Handle::current().block_on(async {
                 match tool_name {
                     "Bash" | "bash" => {
-                        let sandbox_id = self.ensure_sandbox().await?;
+                        // 连续错误熔断：如果 bash 已连续失败多次，直接告知模型停止重试
+                        if self.consecutive_bash_errors >= MAX_CONSECUTIVE_BASH_ERRORS {
+                            return Err(format!(
+                                "沙箱命令已连续失败 {} 次，请停止重试 bash 命令。\
+                                请直接向用户说明当前沙箱执行环境不可用，建议用户检查沙箱服务状态。",
+                                self.consecutive_bash_errors
+                            ));
+                        }
+                        let sandbox_id = match self.ensure_sandbox().await {
+                            Ok(id) => id,
+                            Err(e) => {
+                                self.consecutive_bash_errors += 1;
+                                return Err(format!("沙箱创建失败 (第{}次连续错误): {}", self.consecutive_bash_errors, e));
+                            }
+                        };
                         let req: BashInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
-                        let res = self.sandbox_client.execute_bash(&sandbox_id, &req.command, req.timeout).await?;
-                        let return_code_interpretation = if res.exit_code == 0 { None } else { Some(format!("exit_code:{}", res.exit_code)) };
-                        let output = serde_json::json!({
-                            "stdout": res.stdout,
-                            "stderr": res.stderr,
-                            "interrupted": false,
-                            "return_code_interpretation": return_code_interpretation
-                        });
-                        Ok(serde_json::to_string_pretty(&output).unwrap_or_default())
+                        match self.sandbox_client.execute_bash(&sandbox_id, &req.command, req.timeout).await {
+                            Ok(res) => {
+                                // 成功执行，重置连续错误计数
+                                self.consecutive_bash_errors = 0;
+                                let return_code_interpretation = if res.exit_code == 0 { None } else { Some(format!("exit_code:{}", res.exit_code)) };
+                                let output = serde_json::json!({
+                                    "stdout": res.stdout,
+                                    "stderr": res.stderr,
+                                    "interrupted": false,
+                                    "return_code_interpretation": return_code_interpretation
+                                });
+                                Ok(serde_json::to_string_pretty(&output).unwrap_or_default())
+                            }
+                            Err(e) => {
+                                self.consecutive_bash_errors += 1;
+                                // 如果沙箱执行失败但 sandbox_id 还在，可能是容器内命令问题而非连接问题
+                                // 清空 sandbox_id 以便下次重新创建
+                                if e.contains("request failed") || e.contains("endpoint") {
+                                    self.sandbox_id = None;
+                                }
+                                Err(format!("命令执行失败 (第{}次连续错误): {}", self.consecutive_bash_errors, e))
+                            }
+                        }
                     }
                     "ReadFile" => {
                         let base_dir = std::env::var("WORKSPACE_BASE_DIR").unwrap_or_else(|_| "./data/workspaces".to_string());

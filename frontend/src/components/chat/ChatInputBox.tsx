@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
-import { Button, Input, Tooltip, Segmented, Popover, Typography } from 'antd';
+import { Button, Input, Segmented, Popover, Typography } from 'antd';
 import { SendOutlined, PaperClipOutlined, RobotOutlined, BulbOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ActionIcon } from '@lobehub/ui';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -27,9 +28,7 @@ export const ChatInputBox: React.FC<Props> = ({
       {/* Top Action Bar (LobeUI style) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid rgba(0,0,0,0.04)', background: '#fafafa' }}>
         <div style={{ display: 'flex', gap: 4 }}>
-           <Tooltip title="上传文件作为上下文">
-             <Button type="text" icon={<PaperClipOutlined />} onClick={() => fileInputRef.current?.click()} size="small" />
-           </Tooltip>
+           <ActionIcon icon={PaperClipOutlined} title="上传文件作为上下文" onClick={() => fileInputRef.current?.click()} size="small" />
            
            <Popover 
               content={
@@ -56,7 +55,7 @@ export const ChatInputBox: React.FC<Props> = ({
               trigger="click"
               placement="topLeft"
             >
-              <Tooltip title="唤出技能库"><Button type="text" icon={<RobotOutlined />} size="small" /></Tooltip>
+              <ActionIcon icon={RobotOutlined} title="唤出技能库" size="small" />
             </Popover>
             <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={onFileUpload} />
         </div>

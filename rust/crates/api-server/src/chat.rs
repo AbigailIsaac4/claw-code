@@ -82,13 +82,18 @@ pub async fn chat_completions(
             );
         }
 
+        let max_iters: usize = std::env::var("MAX_AGENT_ITERATIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(25);
         let mut runtime = ConversationRuntime::new(
             session,
             api_client,
             tool_executor,
             PermissionPolicy::new(permission_mode),
             system_prompts,
-        );
+        )
+        .with_max_iterations(max_iters);
 
         // 如果用户有输入，则执行一回合
         if let Some(input) = payload.input {
