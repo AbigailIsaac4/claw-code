@@ -18,7 +18,12 @@ use axum::extract::DefaultBodyLimit;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,api_server=debug")),
+        )
+        .init();
     
     // 加载 .env 环境变量
     dotenvy::dotenv().ok();

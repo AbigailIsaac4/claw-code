@@ -217,8 +217,10 @@ impl ToolExecutor for WebToolExecutor {
             });
         });
 
-        let value: Value = serde_json::from_str(input)
-            .map_err(|e| ToolError::new(format!("Invalid input JSON: {}", e)))?;
+        let value: Value = serde_json::from_str(input).map_err(|e| {
+            tracing::error!("Failed to parse ToolUse input. Raw input: {:?}", input);
+            ToolError::new(format!("Invalid input JSON: {}", e))
+        })?;
 
         let result: Result<String, String> = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {

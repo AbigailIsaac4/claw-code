@@ -23,5 +23,5 @@ api = { path = "../api" }
 tools = { path = "../tools" }
 tower-http = { version = "0.5", features = ["cors"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15.7"
