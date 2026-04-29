@@ -30,7 +30,8 @@ async fn main() {
     ];
 
     let client = Client::new();
-    let api_url = "http://127.0.0.1:3000/v1/auth/register";
+    let port = std::env::var("PORT").unwrap_or_else(|_| "18008".to_string());
+    let api_url = format!("http://127.0.0.1:{}/v1/auth/register", port);
 
     println!("开始批量注册...");
 
