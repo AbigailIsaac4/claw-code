@@ -41,7 +41,14 @@ pub async fn chat_completions(
         let session_id = payload.session_id.clone().unwrap_or_else(|| session.session_id.clone());
         session.session_id = session_id.clone();
         
-        let tool_executor = WebToolExecutor::new(tx_tool, user_id.clone(), session_id.clone(), sandbox_client);
+        // 根据前端传递的 permission_mode 动态构建权限策略
+        let permission_mode = match payload.permission_mode.as_deref() {
+            Some("plan") => runtime::PermissionMode::ReadOnly,
+            Some("execute") => runtime::PermissionMode::DangerFullAccess,
+            _ => runtime::PermissionMode::DangerFullAccess,
+        };
+
+        let tool_executor = WebToolExecutor::new(tx_tool, user_id.clone(), session_id.clone(), sandbox_client, permission_mode);
         let mut prompter = WebPermissionPrompter { 
             tx: tx_prompter,
             pending_actions,
@@ -63,13 +70,6 @@ pub async fn chat_completions(
                 }
             }
         }
-
-        // 根据前端传递的 permission_mode 动态构建权限策略
-        let permission_mode = match payload.permission_mode.as_deref() {
-            Some("plan") => runtime::PermissionMode::ReadOnly,
-            Some("execute") => runtime::PermissionMode::DangerFullAccess,
-            _ => runtime::PermissionMode::DangerFullAccess,
-        };
 
         let mut system_prompts = Vec::new();
         if permission_mode == runtime::PermissionMode::ReadOnly {
@@ -96,6 +96,8 @@ pub async fn chat_completions(
                 .with_tool_requirement("list_dir", runtime::PermissionMode::ReadOnly)
                 .with_tool_requirement("view_file", runtime::PermissionMode::ReadOnly)
                 .with_tool_requirement("TodoWrite", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("bash", runtime::PermissionMode::ReadOnly)
+                .with_tool_requirement("Bash", runtime::PermissionMode::ReadOnly)
                 .with_tool_requirement("execute_bash", runtime::PermissionMode::DangerFullAccess)
                 .with_tool_requirement("write_to_file", runtime::PermissionMode::WorkspaceWrite)
                 .with_tool_requirement("replace_file_content", runtime::PermissionMode::WorkspaceWrite)

@@ -170,6 +170,7 @@ pub struct WebToolExecutor {
     pub session_id: String,
     pub sandbox_id: Option<String>,
     pub tool_registry: GlobalToolRegistry,
+    pub permission_mode: runtime::PermissionMode,
     /// 连续 bash 错误计数器 — 防止 agent loop 无限重试沙箱命令
     consecutive_bash_errors: u32,
 }
@@ -177,7 +178,7 @@ pub struct WebToolExecutor {
 const MAX_CONSECUTIVE_BASH_ERRORS: u32 = 3;
 
 impl WebToolExecutor {
-    pub fn new(tx: Sender<Event>, user_id: String, session_id: String, sandbox_client: OpenSandboxClient) -> Self {
+    pub fn new(tx: Sender<Event>, user_id: String, session_id: String, sandbox_client: OpenSandboxClient, permission_mode: runtime::PermissionMode) -> Self {
         Self {
             tx,
             sandbox_client,
@@ -185,6 +186,7 @@ impl WebToolExecutor {
             session_id,
             sandbox_id: None,
             tool_registry: GlobalToolRegistry::builtin(),
+            permission_mode,
             consecutive_bash_errors: 0,
         }
     }
@@ -246,6 +248,14 @@ impl ToolExecutor for WebToolExecutor {
                             }
                         };
                         let req: BashInput = serde_json::from_str(input).map_err(|e| e.to_string())?;
+                        
+                        // 只读模式下的命令安全校验
+                        if let runtime::bash_validation::ValidationResult::Block { reason } = 
+                            runtime::bash_validation::validate_command(&req.command, self.permission_mode, std::path::Path::new("/workspace")) 
+                        {
+                            return Err(format!("Bash command blocked: {}", reason));
+                        }
+
                         match self.sandbox_client.execute_bash(&sandbox_id, &req.command, req.timeout).await {
                             Ok(res) => {
                                 // 成功执行，重置连续错误计数
