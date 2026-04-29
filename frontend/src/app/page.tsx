@@ -337,7 +337,7 @@ export default function ChatPage() {
 
   const createNewSession = () => {
     const newSession: Session = {
-      id: Date.now().toString(),
+      id: Date.now().toString() + '-' + Math.floor(Math.random() * 1000),
       title: '新的对话',
       messages: []
     };
@@ -358,7 +358,7 @@ export default function ChatPage() {
     setSessions(prev => {
       const next = prev.filter(s => s.id !== id);
       if (next.length === 0) {
-        const fresh = { id: Date.now().toString(), title: '新的对话', messages: [] };
+        const fresh = { id: Date.now().toString() + '-' + Math.floor(Math.random() * 1000), title: '新的对话', messages: [] };
         setActiveSessionId(fresh.id);
         return [fresh];
       }

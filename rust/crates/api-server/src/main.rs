@@ -14,6 +14,7 @@ use axum::{
 use state::AppState;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
+use axum::extract::DefaultBodyLimit;
 
 #[tokio::main]
 async fn main() {
@@ -26,8 +27,8 @@ async fn main() {
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
-        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION]);
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
 
     let app = Router::new()
         .route("/health", get(|| async { "OK" }))
@@ -41,6 +42,7 @@ async fn main() {
         .route("/v1/sandbox/download", get(sandbox_routes::download_file))
         .route("/v1/skills", get(skills::list_skills))
         .layer(cors)
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit
         .with_state(state);
 
     let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse().unwrap_or(3000);
