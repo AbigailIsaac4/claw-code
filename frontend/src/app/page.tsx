@@ -16,6 +16,8 @@ import { ChatInputBox } from '@/components/chat/ChatInputBox';
 const { TextArea } = Input;
 const { Text } = Typography;
 
+const generateId = () => `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
+
 interface ToolCall {
   id: string;
   name: string;
@@ -241,10 +243,10 @@ export default function ChatPage() {
             for (const block of msg.blocks || []) {
               if (block.type === 'text') content += block.text;
             }
-            messages.push({ id: crypto.randomUUID(), role: 'user', content });
+            messages.push({ id: generateId(), role: 'user', content });
           } else if (role === 'assistant') {
             if (!currentAssistant) {
-              currentAssistant = { id: crypto.randomUUID(), role: 'assistant', content: '', toolCalls: [] };
+              currentAssistant = { id: generateId(), role: 'assistant', content: '', toolCalls: [] };
             }
             for (const block of msg.blocks || []) {
               if (block.type === 'text') {
@@ -257,7 +259,7 @@ export default function ChatPage() {
                   } catch(e) {}
                 }
                 currentAssistant.toolCalls!.push({
-                  id: block.id || crypto.randomUUID(),
+                  id: block.id || generateId(),
                   name: block.name,
                   input: typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
                   status: 'running'
@@ -339,7 +341,7 @@ export default function ChatPage() {
 
   const createNewSession = () => {
     const newSession: Session = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       title: '新的对话',
       messages: []
     };
@@ -360,7 +362,7 @@ export default function ChatPage() {
     setSessions(prev => {
       const next = prev.filter(s => s.id !== id);
       if (next.length === 0) {
-        const fresh = { id: crypto.randomUUID(), title: '新的对话', messages: [] };
+        const fresh = { id: generateId(), title: '新的对话', messages: [] };
         setActiveSessionId(fresh.id);
         return [fresh];
       }
@@ -412,7 +414,7 @@ export default function ChatPage() {
     if (uploadedFiles.length > 0) {
       finalInput += (finalInput ? '\n\n' : '') + '我已上传文件至沙箱路径：' + uploadedFiles.join('，') + '，请分析。';
     }
-    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: finalInput };
+    const userMsg: Message = { id: generateId(), role: 'user', content: finalInput };
     setUploadedFiles([]);
     
     const messagesAfterUser = [...activeSession.messages, userMsg];
@@ -421,7 +423,7 @@ export default function ChatPage() {
     setInput('');
     setLoading(true);
 
-    const assistantMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: '' };
+    const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '' };
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
 
     const ctrl = new AbortController();
@@ -473,7 +475,7 @@ export default function ChatPage() {
                   const lastMsg = nextMsgs[nextMsgs.length - 1];
                   const inputStr = typeof data.input === 'string' ? data.input : JSON.stringify(data.input);
                   const newToolCall: ToolCall = {
-                    id: crypto.randomUUID(),
+                    id: generateId(),
                     name: data.tool,
                     input: inputStr,
                     status: 'running'
@@ -947,7 +949,7 @@ export default function ChatPage() {
             icon={<PlusOutlined />} 
             style={{ marginTop: 16 }}
             onClick={() => {
-              const newPlugin = { id: crypto.randomUUID(), name: '新插件 (配置中)', command: 'npx', args: '', active: false };
+              const newPlugin = { id: generateId(), name: '新插件 (配置中)', command: 'npx', args: '', active: false };
               setPlugins([...plugins, newPlugin]);
             }}
           >
