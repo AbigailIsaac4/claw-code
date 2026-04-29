@@ -931,13 +931,17 @@ pub fn build_chat_completion_request(
 /// Returns true for models that do NOT support the `is_error` field in tool results.
 /// kimi models (via Moonshot AI/Dashscope) reject this field with 400 Bad Request.
 /// Public for benchmarking and testing purposes.
+/// Returns true for models that do NOT support the `is_error` field in tool results.
+/// kimi models (via Moonshot AI/Dashscope) and qwen models reject this field with 400 Bad Request.
+/// Public for benchmarking and testing purposes.
 #[must_use]
 pub fn model_rejects_is_error_field(model: &str) -> bool {
     let lowered = model.to_ascii_lowercase();
     // Strip any provider/ prefix for the check
     let canonical = lowered.rsplit('/').next().unwrap_or(lowered.as_str());
     // kimi models (kimi-k2.5, kimi-k1.5, kimi-moonshot, etc.)
-    canonical.starts_with("kimi")
+    // qwen models
+    canonical.starts_with("kimi") || canonical.starts_with("qwen") || canonical.starts_with("deepseek")
 }
 
 /// Translates an `InputMessage` into OpenAI-compatible message format.

@@ -3299,6 +3299,7 @@ fn push_project_skill_lookup_roots(roots: &mut Vec<SkillLookupRoot>, cwd: &std::
         push_prefixed_skill_lookup_roots(roots, &ancestor.join(".claw"));
         push_prefixed_skill_lookup_roots(roots, &ancestor.join(".codex"));
         push_prefixed_skill_lookup_roots(roots, &ancestor.join(".claude"));
+        push_prefixed_skill_lookup_roots(roots, &ancestor.join("assets"));
     }
 }
 

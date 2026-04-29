@@ -16,7 +16,7 @@ mod file_ops;
 mod git_context;
 pub mod green_contract;
 mod hooks;
-mod json;
+pub mod json;
 mod lane_events;
 pub mod lsp_client;
 mod mcp;
