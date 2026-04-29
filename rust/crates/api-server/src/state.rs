@@ -15,12 +15,12 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(db: sqlx::SqlitePool) -> Self {
-        // 由于是本地兼容模型，API Key 可以随便填一个 placeholder
-        let api_key = std::env::var("QWEN_API_KEY").unwrap_or_else(|_| "sk-local-qwen".to_string());
+        let api_key = std::env::var("OPENAI_API_KEY").or_else(|_| std::env::var("QWEN_API_KEY")).unwrap_or_else(|_| "sk-local-qwen".to_string());
+        let base_url = std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "http://10.50.70.91:8000/v1".to_string());
         
         // 1. 初始化一个针对本地 Qwen 的 OpenAI 兼容客户端
         let qwen_client = OpenAiCompatClient::new(api_key, OpenAiCompatConfig::openai())
-            .with_base_url("http://10.50.70.91:8000/v1"); // 对接本地大模型
+            .with_base_url(&base_url); // 对接本地大模型
 
         let sandbox_client = OpenSandboxClient::new();
 

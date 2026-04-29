@@ -60,6 +60,7 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
   // Plan / Execute 模式切换
   const [agentMode, setAgentMode] = useState<'plan' | 'execute'>('execute');
@@ -150,7 +151,7 @@ export default function ChatPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         message.success({ content: `文件已安全存储至沙箱: ${data.files[0]}`, key: 'upload' });
-        setInput(prev => prev + `\n\n我已上传文件至沙箱路径：${data.files[0]}，请分析。\n`);
+        setUploadedFiles(prev => [...prev, data.files[0]]);
       } else {
         message.error({ content: '上传失败: ' + (data.error || '未知错误'), key: 'upload' });
       }
@@ -403,10 +404,16 @@ export default function ChatPage() {
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || loading || !activeSession || !token) return;
+    if ((!input.trim() && uploadedFiles.length === 0) || loading || !activeSession || !token) return;
 
     const sessionId = activeSessionId;
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
+    let finalInput = input;
+    if (uploadedFiles.length > 0) {
+      finalInput += (finalInput ? '\n\n' : '') + '我已上传文件至沙箱路径：' + uploadedFiles.join('，') + '，请分析。';
+    }
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: finalInput };
+    setUploadedFiles([]);
+    
     const messagesAfterUser = [...activeSession.messages, userMsg];
     updateSessionMessages(sessionId, messagesAfterUser);
     setInput('');
@@ -773,6 +780,23 @@ export default function ChatPage() {
 
         {/* Input Area */}
         <div style={{ padding: '0 24px 32px', background: 'transparent' }}>
+          {uploadedFiles.length > 0 && (
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {uploadedFiles.map(f => (
+                <div key={f} style={{ background: '#e6f4ff', color: '#1677ff', padding: '4px 12px', borderRadius: 16, fontSize: 12, display: 'flex', alignItems: 'center' }}>
+                  <PaperClipOutlined style={{ marginRight: 4 }} /> {f.split('/').pop()}
+                  <Button 
+                    type="text" 
+                    size="small" 
+                    style={{ marginLeft: 4, padding: 0, height: 'auto', color: '#1677ff', background: 'transparent' }} 
+                    onClick={() => setUploadedFiles(prev => prev.filter(p => p !== f))}
+                  >
+                    ×
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
           <ChatInputBox 
             input={input}
             setInput={setInput}

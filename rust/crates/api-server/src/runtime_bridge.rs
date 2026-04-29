@@ -58,8 +58,9 @@ impl ApiClient for WebApiClient {
             })
             .collect::<Vec<_>>();
 
+        let model_name = std::env::var("OPENAI_MODEL_NAME").unwrap_or_else(|_| "qwen".to_string());
         let message_request = MessageRequest {
-            model: "qwen".to_string(), // Ensure this matches DashScope setup
+            model: model_name,
             messages: mapped_messages,
             system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
             tools: Some(

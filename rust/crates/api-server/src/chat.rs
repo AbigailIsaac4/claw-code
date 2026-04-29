@@ -92,6 +92,33 @@ pub async fn chat_completions(
 
         // 如果用户有输入，则执行一回合
         if let Some(input) = payload.input {
+            // --- 预保存用户输入，防止后台执行卡死导致刷新后丢失 ---
+            if let Err(e) = runtime.session_mut().push_user_text(&input) {
+                eprintln!("Failed to push user text: {}", e);
+            }
+            let pre_state = if let Ok(json_val) = runtime.session().to_json() {
+                json_val.render()
+            } else {
+                String::new()
+            };
+            let title = payload.title.clone().unwrap_or_else(|| "新的会话".to_string());
+            
+            tokio::runtime::Handle::current().block_on(async {
+                let _ = sqlx::query(
+                    r#"INSERT INTO sessions (id, user_id, title, state) 
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP"#
+                )
+                .bind(&session_id)
+                .bind(&user_id)
+                .bind(&title)
+                .bind(&pre_state)
+                .execute(&db).await;
+            });
+            // 因为 run_turn 内部会再 push 一次用户输入，我们先将其弹出来，保持一致
+            runtime.session_mut().messages.pop();
+            // -----------------------------------------------------
+            
             let _ = runtime.run_turn(input, Some(&mut prompter));
         }
 

@@ -65,7 +65,7 @@ impl OpenSandboxClient {
 
         let client = Client::builder()
             .default_headers(headers)
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(5))
             .build()
             .expect("Failed to build OpenSandbox client");
 

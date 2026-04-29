@@ -20,6 +20,9 @@ use axum::extract::DefaultBodyLimit;
 async fn main() {
     tracing_subscriber::fmt::init();
     
+    // 加载 .env 环境变量
+    dotenvy::dotenv().ok();
+    
     // 初始化数据库 (3.1)
     let pool = db::init_db().await.expect("Failed to initialize database");
     
