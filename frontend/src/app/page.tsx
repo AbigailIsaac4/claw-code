@@ -79,7 +79,7 @@ export default function ChatPage() {
   const loadSkills = async () => {
     setSkillsLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:3000/v1/skills');
+      const res = await fetch('http://127.0.0.1:18008/v1/skills');
       const data = await res.json();
       if (data.status === 'success') setSkills(data.data);
     } catch (err) {
@@ -140,7 +140,7 @@ export default function ChatPage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('http://127.0.0.1:3000/v1/sandbox/upload', {
+      const res = await fetch('http://127.0.0.1:18008/v1/sandbox/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('claw_token')}`
@@ -173,7 +173,7 @@ export default function ChatPage() {
     
     message.loading({ content: '正在从沙箱拉取文件...', key: 'download' });
     try {
-      const res = await fetch(`http://127.0.0.1:3000/v1/sandbox/download?path=${filename}`, {
+      const res = await fetch(`http://127.0.0.1:18008/v1/sandbox/download?path=${filename}`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('claw_token')}` }
       });
       if (!res.ok) {
@@ -196,7 +196,7 @@ export default function ChatPage() {
 
   const loadSessions = async (authToken: string) => {
     try {
-      const res = await fetch('http://127.0.0.1:3000/v1/sessions', {
+      const res = await fetch('http://127.0.0.1:18008/v1/sessions', {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (!res.ok) {
@@ -217,7 +217,7 @@ export default function ChatPage() {
 
   const loadSessionDetail = async (id: string, authToken: string, sessionList: any[]) => {
     try {
-      const res = await fetch(`http://127.0.0.1:3000/v1/sessions/${id}`, {
+      const res = await fetch(`http://127.0.0.1:18008/v1/sessions/${id}`, {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (res.ok) {
@@ -305,7 +305,7 @@ export default function ChatPage() {
     if (!email || !password) return message.warning('请输入邮箱和密码');
     setLoginLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:3000/v1/auth/login', {
+      const res = await fetch('http://127.0.0.1:18008/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -348,7 +348,7 @@ export default function ChatPage() {
   const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await fetch(`http://127.0.0.1:3000/v1/sessions/${id}`, {
+      await fetch(`http://127.0.0.1:18008/v1/sessions/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('claw_token')}` }
       });
@@ -384,7 +384,7 @@ export default function ChatPage() {
   const handleResolveAction = async (allow: boolean) => {
     if (!actionReq || !token) return;
     try {
-      await fetch('http://127.0.0.1:3000/v1/chat/resolve_action', {
+      await fetch('http://127.0.0.1:18008/v1/chat/resolve_action', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -418,7 +418,7 @@ export default function ChatPage() {
     const ctrl = new AbortController();
 
     try {
-      await fetchEventSource('http://127.0.0.1:3000/v1/chat/completions', {
+      await fetchEventSource('http://127.0.0.1:18008/v1/chat/completions', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
