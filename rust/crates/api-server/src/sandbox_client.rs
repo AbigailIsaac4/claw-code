@@ -27,7 +27,7 @@ struct CreateSandboxReq {
 
 #[derive(Serialize)]
 struct ImageSpec {
-    image: String,
+    uri: String,
 }
 
 #[derive(Serialize)]
@@ -47,7 +47,8 @@ struct CreateSandboxRes {
 
 #[derive(Deserialize)]
 struct EndpointRes {
-    url: String,
+    #[serde(alias = "url")]
+    endpoint: String,
 }
 
 // ─────────────────────── Command Execution ───────────────────────
@@ -59,6 +60,8 @@ struct RunCommandReq {
     cwd: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     timeout: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    envs: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Parsed result from SSE stream of command execution
@@ -121,7 +124,7 @@ impl OpenSandboxClient {
 
         let url = format!("{}/sandboxes", self.base_url);
         let req = CreateSandboxReq {
-            image: ImageSpec { image: template },
+            image: ImageSpec { uri: template },
             resource_limits: ResourceLimits {
                 cpu: "1".to_string(),
                 memory: "2Gi".to_string(),
@@ -175,7 +178,12 @@ impl OpenSandboxClient {
         let endpoint: EndpointRes = res.json().await
             .map_err(|e| format!("Failed to parse endpoint response: {}", e))?;
 
-        Ok(endpoint.url)
+        let mut url = endpoint.endpoint;
+        if !url.starts_with("http") {
+            url = format!("http://{}", url);
+        }
+
+        Ok(url)
     }
 
     // ────────── Execd: Health Check ──────────
@@ -185,7 +193,7 @@ impl OpenSandboxClient {
             match self.get_execd_url(sandbox_id).await {
                 Ok(execd_url) => {
                     // Try a health ping
-                    let health_url = format!("{}/health", execd_url.trim_end_matches('/'));
+                    let health_url = format!("{}/ping", execd_url.trim_end_matches('/'));
                     match self.client.get(&health_url)
                         .timeout(Duration::from_secs(3))
                         .send().await
@@ -220,10 +228,28 @@ impl OpenSandboxClient {
         let execd_url = self.get_execd_url(sandbox_id).await?;
         let cmd_url = format!("{}/command", execd_url.trim_end_matches('/'));
 
+        let mut envs = std::collections::HashMap::new();
+        if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
+            envs.insert("ANTHROPIC_API_KEY".to_string(), key);
+        }
+        if let Ok(url) = env::var("ANTHROPIC_BASE_URL") {
+            envs.insert("ANTHROPIC_BASE_URL".to_string(), url);
+        }
+        if let Ok(key) = env::var("OPENAI_API_KEY") {
+            envs.insert("OPENAI_API_KEY".to_string(), key);
+        }
+        if let Ok(url) = env::var("OPENAI_BASE_URL") {
+            envs.insert("OPENAI_BASE_URL".to_string(), url);
+        }
+        if let Ok(model) = env::var("OPENAI_MODEL_NAME") {
+            envs.insert("OPENAI_MODEL_NAME".to_string(), model);
+        }
+
         let req = RunCommandReq {
             command: command.to_string(),
             cwd: Some("/workspace".to_string()),
             timeout: timeout_ms,
+            envs: if envs.is_empty() { None } else { Some(envs) },
         };
 
         tracing::debug!("Executing command in sandbox {}: {}", sandbox_id, command);
