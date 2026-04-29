@@ -149,8 +149,8 @@ impl OpenSandboxClient {
 
         tracing::info!("Sandbox created: {}", data.sandbox_id);
 
-        // Wait for sandbox to be healthy (simple retry with ping)
-        self.wait_for_ready(&data.sandbox_id, 90).await?;
+        // Wait for sandbox to be healthy (simple retry with ping). Reduced to 15 (30s) to fail fast.
+        self.wait_for_ready(&data.sandbox_id, 15).await?;
 
         Ok(data.sandbox_id)
     }
