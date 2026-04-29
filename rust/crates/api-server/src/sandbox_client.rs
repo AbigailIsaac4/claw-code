@@ -160,8 +160,12 @@ impl OpenSandboxClient {
     /// Get the execd proxy endpoint URL for a sandbox.
     /// When `use_server_proxy=true`, the server acts as a reverse proxy to the sandbox's execd.
     async fn get_execd_url(&self, sandbox_id: &str) -> Result<String, String> {
+        // We use use_server_proxy=false to get the direct host mapped port.
+        // The sandbox server (especially with runsc/gVisor) often fails to connect to the internal container IP (172.17.0.x),
+        // resulting in a 502 Bad Gateway when use_server_proxy=true.
+        // By connecting to the mapped host port directly, we bypass the internal routing issues.
         let url = format!(
-            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=true",
+            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=false",
             self.base_url, sandbox_id
         );
         tracing::debug!("Resolving execd endpoint: GET {}", url);
@@ -178,12 +182,19 @@ impl OpenSandboxClient {
         let endpoint: EndpointRes = res.json().await
             .map_err(|e| format!("Failed to parse endpoint response: {}", e))?;
 
-        let mut url = endpoint.endpoint;
-        if !url.starts_with("http") {
-            url = format!("http://{}", url);
-        }
+        // endpoint is usually like "10.0.0.12:43555" or "0.0.0.0:43555".
+        // If api-server is running on a different machine (e.g. Windows), it cannot reach 10.0.0.12 or 0.0.0.0.
+        // We extract the port and combine it with the known reachable host of self.base_url.
+        let parsed_base = reqwest::Url::parse(&self.base_url)
+            .map_err(|e| format!("Invalid base_url: {}", e))?;
+        
+        let port = endpoint.endpoint.split(':').last().unwrap_or(&endpoint.endpoint);
+        
+        let final_url = format!("{}://{}:{}", parsed_base.scheme(), parsed_base.host_str().unwrap_or("127.0.0.1"), port);
+        
+        tracing::debug!("Rewrote returned endpoint {} to {}", endpoint.endpoint, final_url);
 
-        Ok(url)
+        Ok(final_url)
     }
 
     // ────────── Execd: Health Check ──────────
