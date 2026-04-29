@@ -202,11 +202,12 @@ impl ToolExecutor for WebToolExecutor {
         // 运行工具时的副作用：通知前端进入工具执行状态
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
+                let sse_data = serde_json::to_string(&serde_json::json!({
+                    "tool": tool_name,
+                    "input": input
+                })).unwrap_or_default();
                 let _ = self.tx.send(
-                    Event::default().event("tool_call_start").data(format!(
-                        r#"{{"tool": "{}", "input": "{}"}}"#,
-                        tool_name, input.replace("\"", "\\\"").replace("\n", "\\n")
-                    ))
+                    Event::default().event("tool_call_start").data(sse_data)
                 ).await;
             });
         });
@@ -273,11 +274,12 @@ impl ToolExecutor for WebToolExecutor {
             Ok(output) => {
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
+                        let sse_data = serde_json::to_string(&serde_json::json!({
+                            "tool": tool_name,
+                            "result": output
+                        })).unwrap_or_default();
                         let _ = self.tx.send(
-                            Event::default().event("tool_call_result").data(format!(
-                                r#"{{"tool": "{}", "result": "{}"}}"#,
-                                tool_name, output.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
-                            ))
+                            Event::default().event("tool_call_result").data(sse_data)
                         ).await;
                     });
                 });
@@ -285,11 +287,12 @@ impl ToolExecutor for WebToolExecutor {
             Err(e) => {
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
+                        let sse_data = serde_json::to_string(&serde_json::json!({
+                            "tool": tool_name,
+                            "error": e.to_string()
+                        })).unwrap_or_default();
                         let _ = self.tx.send(
-                            Event::default().event("tool_call_result").data(format!(
-                                r#"{{"tool": "{}", "error": "{}"}}"#,
-                                tool_name, e.to_string().replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
-                            ))
+                            Event::default().event("tool_call_result").data(sse_data)
                         ).await;
                     });
                 });
@@ -321,11 +324,14 @@ impl PermissionPrompter for WebPermissionPrompter {
         // 向前端发送阻断授权请求事件，并在事件中带上 action_id
         let send_result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
+                let sse_data = serde_json::to_string(&serde_json::json!({
+                    "action_id": action_id,
+                    "tool": request.tool_name,
+                    "required_mode": request.required_mode.as_str(),
+                    "message": "需要用户审批"
+                })).unwrap_or_default();
                 self.tx.send(
-                    Event::default().event("action_required").data(format!(
-                        r#"{{"action_id": "{}", "tool": "{}", "required_mode": "{}", "message": "需要用户审批"}}"#,
-                        action_id, request.tool_name, request.required_mode.as_str()
-                    ))
+                    Event::default().event("action_required").data(sse_data)
                 ).await
             })
         });

@@ -457,57 +457,70 @@ export default function ChatPage() {
               return s;
             }));
           } else if (ev.event === 'tool_call_start') {
-            const data = JSON.parse(ev.data);
-            if (data.tool === 'TodoWrite') {
-              try {
-                const inputArgs = JSON.parse(data.input);
-                if (inputArgs.todos) setTodos(inputArgs.todos);
-              } catch(e) {}
-            }
-            setSessions(prev => prev.map(s => {
-              if (s.id === sessionId) {
-                const nextMsgs = [...s.messages];
-                const lastMsg = nextMsgs[nextMsgs.length - 1];
-                const newToolCall: ToolCall = {
-                  id: Math.random().toString(),
-                  name: data.tool,
-                  input: data.input,
-                  status: 'running'
-                };
-                nextMsgs[nextMsgs.length - 1] = { 
-                  ...lastMsg, 
-                  toolCalls: [...(lastMsg.toolCalls || []), newToolCall]
-                };
-                return { ...s, messages: nextMsgs };
+            try {
+              const data = JSON.parse(ev.data);
+              if (data.tool === 'TodoWrite') {
+                try {
+                  const rawInput = typeof data.input === 'string' ? JSON.parse(data.input) : data.input;
+                  if (rawInput.todos) setTodos(rawInput.todos);
+                } catch(e) {}
               }
-              return s;
-            }));
-          } else if (ev.event === 'tool_call_result') {
-            const data = JSON.parse(ev.data);
-            setSessions(prev => prev.map(s => {
-              if (s.id === sessionId) {
-                const nextMsgs = [...s.messages];
-                const lastMsg = nextMsgs[nextMsgs.length - 1];
-                if (lastMsg.toolCalls) {
-                  const calls = [...lastMsg.toolCalls];
-                  const idx = calls.findIndex(t => t.name === data.tool && t.status === 'running');
-                  if (idx !== -1) {
-                    calls[idx] = { 
-                      ...calls[idx], 
-                      status: data.error ? 'error' : 'done',
-                      result: data.result,
-                      error: data.error
-                    };
-                    nextMsgs[nextMsgs.length - 1] = { ...lastMsg, toolCalls: calls };
-                  }
+              setSessions(prev => prev.map(s => {
+                if (s.id === sessionId) {
+                  const nextMsgs = [...s.messages];
+                  const lastMsg = nextMsgs[nextMsgs.length - 1];
+                  const inputStr = typeof data.input === 'string' ? data.input : JSON.stringify(data.input);
+                  const newToolCall: ToolCall = {
+                    id: Math.random().toString(),
+                    name: data.tool,
+                    input: inputStr,
+                    status: 'running'
+                  };
+                  nextMsgs[nextMsgs.length - 1] = { 
+                    ...lastMsg, 
+                    toolCalls: [...(lastMsg.toolCalls || []), newToolCall]
+                  };
+                  return { ...s, messages: nextMsgs };
                 }
-                return { ...s, messages: nextMsgs };
-              }
-              return s;
-            }));
+                return s;
+              }));
+            } catch(e) {
+              console.warn('Failed to parse tool_call_start:', e);
+            }
+          } else if (ev.event === 'tool_call_result') {
+            try {
+              const data = JSON.parse(ev.data);
+              setSessions(prev => prev.map(s => {
+                if (s.id === sessionId) {
+                  const nextMsgs = [...s.messages];
+                  const lastMsg = nextMsgs[nextMsgs.length - 1];
+                  if (lastMsg.toolCalls) {
+                    const calls = [...lastMsg.toolCalls];
+                    const idx = calls.findIndex(t => t.name === data.tool && t.status === 'running');
+                    if (idx !== -1) {
+                      calls[idx] = { 
+                        ...calls[idx], 
+                        status: data.error ? 'error' : 'done',
+                        result: data.result,
+                        error: data.error
+                      };
+                      nextMsgs[nextMsgs.length - 1] = { ...lastMsg, toolCalls: calls };
+                    }
+                  }
+                  return { ...s, messages: nextMsgs };
+                }
+                return s;
+              }));
+            } catch(e) {
+              console.warn('Failed to parse tool_call_result:', e);
+            }
           } else if (ev.event === 'action_required') {
-            const data = JSON.parse(ev.data);
-            setActionReq(data);
+            try {
+              const data = JSON.parse(ev.data);
+              setActionReq(data);
+            } catch(e) {
+              console.warn('Failed to parse action_required:', e);
+            }
           }
         },
         onerror(err) {
