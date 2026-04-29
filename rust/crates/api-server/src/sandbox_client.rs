@@ -161,7 +161,7 @@ impl OpenSandboxClient {
     /// When `use_server_proxy=true`, the server acts as a reverse proxy to the sandbox's execd.
     async fn get_execd_url(&self, sandbox_id: &str) -> Result<String, String> {
         let url = format!(
-            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=true",
+            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=false",
             self.base_url, sandbox_id
         );
         tracing::debug!("Resolving execd endpoint: GET {}", url);

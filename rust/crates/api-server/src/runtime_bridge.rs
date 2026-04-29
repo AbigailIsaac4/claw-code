@@ -102,7 +102,9 @@ impl ApiClient for WebApiClient {
                                         }
                                     }
                                     api::OutputContentBlock::ToolUse { id, name, input } => {
-                                        let input_str = if input.is_string() {
+                                        let input_str = if input.is_null() || (input.is_object() && input.as_object().unwrap().is_empty()) {
+                                            String::new()
+                                        } else if input.is_string() {
                                             input.as_str().unwrap().to_string()
                                         } else {
                                             input.to_string()
@@ -115,7 +117,9 @@ impl ApiClient for WebApiClient {
                         }
                         api::StreamEvent::ContentBlockStart(start) => {
                             if let api::OutputContentBlock::ToolUse { id, name, input } = start.content_block {
-                                let input_str = if input.is_string() {
+                                let input_str = if input.is_null() || (input.is_object() && input.as_object().unwrap().is_empty()) {
+                                    String::new()
+                                } else if input.is_string() {
                                     input.as_str().unwrap().to_string()
                                 } else {
                                     input.to_string()
