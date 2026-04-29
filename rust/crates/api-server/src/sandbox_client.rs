@@ -150,7 +150,7 @@ impl OpenSandboxClient {
         tracing::info!("Sandbox created: {}", data.sandbox_id);
 
         // Wait for sandbox to be healthy (simple retry with ping)
-        self.wait_for_ready(&data.sandbox_id, 60).await?;
+        self.wait_for_ready(&data.sandbox_id, 90).await?;
 
         Ok(data.sandbox_id)
     }
@@ -161,7 +161,7 @@ impl OpenSandboxClient {
     /// When `use_server_proxy=true`, the server acts as a reverse proxy to the sandbox's execd.
     async fn get_execd_url(&self, sandbox_id: &str) -> Result<String, String> {
         let url = format!(
-            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=false",
+            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=true",
             self.base_url, sandbox_id
         );
         tracing::debug!("Resolving execd endpoint: GET {}", url);
@@ -195,24 +195,39 @@ impl OpenSandboxClient {
                     // Try a health ping
                     let health_url = format!("{}/ping", execd_url.trim_end_matches('/'));
                     match self.client.get(&health_url)
-                        .timeout(Duration::from_secs(3))
+                        .timeout(Duration::from_secs(5))
                         .send().await
                     {
                         Ok(r) if r.status().is_success() => {
                             tracing::info!("Sandbox {} is ready (attempt {})", sandbox_id, attempt);
                             return Ok(());
                         }
-                        _ => {}
+                        Ok(r) => {
+                            let status = r.status();
+                            let body = r.text().await.unwrap_or_default();
+                            if attempt % 10 == 1 {
+                                tracing::info!("Sandbox {} health check attempt {}/{}: HTTP {} - {}", sandbox_id, attempt, max_attempts, status, &body[..body.len().min(120)]);
+                            }
+                        }
+                        Err(e) => {
+                            if attempt % 10 == 1 {
+                                tracing::info!("Sandbox {} health check attempt {}/{}: {}", sandbox_id, attempt, max_attempts, e);
+                            }
+                        }
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    if attempt % 10 == 1 {
+                        tracing::warn!("Sandbox {} endpoint resolution failed (attempt {}/{}): {}", sandbox_id, attempt, max_attempts, e);
+                    }
+                }
             }
 
             if attempt < max_attempts {
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(Duration::from_secs(2)).await;
             }
         }
-        Err(format!("Sandbox {} did not become ready after {} attempts", sandbox_id, max_attempts))
+        Err(format!("Sandbox {} did not become ready after {} attempts (~{}s)", sandbox_id, max_attempts, max_attempts * 2))
     }
 
     // ────────── Execd: Execute Command ──────────
@@ -272,49 +287,107 @@ impl OpenSandboxClient {
     }
 
     /// Parse the SSE response from the execd /command endpoint.
-    /// Events look like:
-    ///   event: stdout\ndata: {"text":"..."}\n\n
-    ///   event: stderr\ndata: {"text":"..."}\n\n
-    ///   event: result\ndata: {"exitCode":0}\n\n
+    ///
+    /// The execd service sends `data:` lines with self-describing JSON events:
+    ///   data: {"type":"stdout","text":"...","timestamp":1234}
+    ///   data: {"type":"stderr","text":"...","timestamp":1234}
+    ///   data: {"type":"error","error":{"name":"...","value":"1","traceback":"..."},"timestamp":1234}
+    ///   data: {"type":"execution_complete","timestamp":1234}
+    ///
+    /// Also supports standard SSE format (event:/data: pairs) as fallback.
     fn parse_command_sse(&self, body: &str) -> Result<ExecCommandRes, String> {
         let mut stdout_parts: Vec<String> = Vec::new();
         let mut stderr_parts: Vec<String> = Vec::new();
-        let mut exit_code: i32 = -1;
+        let mut exit_code: i32 = 0; // default success if no error event
+        let mut got_error = false;
+        let mut got_complete = false;
 
+        // Fallback: track event: lines for standard SSE format
         let mut current_event = String::new();
 
         for line in body.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                current_event.clear();
+                continue;
+            }
+
             if line.starts_with("event:") {
                 current_event = line.trim_start_matches("event:").trim().to_string();
-            } else if line.starts_with("data:") {
-                let data_str = line.trim_start_matches("data:").trim();
-                match current_event.as_str() {
-                    "stdout" => {
-                        if let Ok(v) = serde_json::from_str::<Value>(data_str) {
-                            if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
-                                stdout_parts.push(text.to_string());
-                            }
-                        }
-                    }
-                    "stderr" => {
-                        if let Ok(v) = serde_json::from_str::<Value>(data_str) {
-                            if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
-                                stderr_parts.push(text.to_string());
-                            }
-                        }
-                    }
-                    "result" | "complete" => {
-                        if let Ok(v) = serde_json::from_str::<Value>(data_str) {
-                            if let Some(code) = v.get("exitCode").or(v.get("exit_code")).and_then(|c| c.as_i64()) {
-                                exit_code = code as i32;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            } else if line.is_empty() {
-                current_event.clear();
+                continue;
             }
+
+            // Skip non-data lines (comments, id:, retry:)
+            if !line.starts_with("data:") {
+                continue;
+            }
+
+            let data_str = line.trim_start_matches("data:").trim();
+            if data_str.is_empty() {
+                continue;
+            }
+
+            let Ok(v) = serde_json::from_str::<Value>(data_str) else {
+                tracing::debug!("Skipping unparseable SSE data: {}", &data_str[..data_str.len().min(100)]);
+                continue;
+            };
+
+            // Determine event type: prefer "type" field in JSON, fall back to event: line
+            let event_type = v.get("type")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| current_event.clone());
+
+            match event_type.as_str() {
+                "stdout" => {
+                    if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
+                        stdout_parts.push(text.to_string());
+                    }
+                }
+                "stderr" => {
+                    if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
+                        stderr_parts.push(text.to_string());
+                    }
+                }
+                "error" => {
+                    got_error = true;
+                    // Exit code from error.value (SDK pattern)
+                    if let Some(err_obj) = v.get("error") {
+                        if let Some(val) = err_obj.get("value").and_then(|v| v.as_str()) {
+                            exit_code = val.parse::<i32>().unwrap_or(1);
+                        } else {
+                            exit_code = 1;
+                        }
+                        if let Some(tb) = err_obj.get("traceback").and_then(|t| t.as_str()) {
+                            stderr_parts.push(tb.to_string());
+                        }
+                    } else {
+                        exit_code = 1;
+                    }
+                }
+                "result" | "complete" => {
+                    // Legacy format: {"exitCode": 0}
+                    if let Some(code) = v.get("exitCode").or(v.get("exit_code")).and_then(|c| c.as_i64()) {
+                        exit_code = code as i32;
+                    }
+                }
+                "execution_complete" => {
+                    got_complete = true;
+                    // Successful completion with no error means exit_code = 0
+                }
+                "init" | "execution_count" => {
+                    // Informational, skip
+                }
+                _ => {
+                    tracing::debug!("Unknown execd SSE event type: {}", event_type);
+                }
+            }
+        }
+
+        // If we got neither an explicit error nor a completion event, and there's
+        // no stdout/stderr at all, the command may have failed silently
+        if !got_error && !got_complete && stdout_parts.is_empty() && stderr_parts.is_empty() {
+            tracing::warn!("No output events received from execd; raw body length = {}", body.len());
         }
 
         Ok(ExecCommandRes {
