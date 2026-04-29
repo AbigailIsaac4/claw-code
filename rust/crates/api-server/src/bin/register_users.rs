@@ -36,7 +36,7 @@ async fn main() {
     println!("开始批量注册...");
 
     for user in users {
-        match client.post(api_url).json(&user).send().await {
+        match client.post(&api_url).json(&user).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     println!("✅ 成功注册用户: {} ({})", user.email, user.full_name);
