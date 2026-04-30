@@ -6,6 +6,11 @@ import { ActionIcon } from '@lobehub/ui';
 const { TextArea } = Input;
 const { Text } = Typography;
 
+interface SkillInfo {
+  name: string;
+  description: string;
+}
+
 interface Props {
   input: string;
   setInput: React.Dispatch<React.SetStateAction<string>>;
@@ -14,7 +19,7 @@ interface Props {
   agentMode: 'plan' | 'execute';
   setAgentMode: (mode: 'plan' | 'execute') => void;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  skills: any[];
+  skills: SkillInfo[];
 }
 
 export const ChatInputBox: React.FC<Props> = ({

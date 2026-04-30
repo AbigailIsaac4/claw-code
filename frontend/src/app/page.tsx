@@ -17,7 +17,7 @@ const { TextArea } = Input;
 const { Text } = Typography;
 
 const generateId = () => `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://10.50.70.91:18008';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
 interface ToolCall {
@@ -48,6 +48,21 @@ interface Session {
   messages: Message[];
 }
 
+type SessionSummary = Pick<Session, 'id' | 'title'>;
+
+interface SkillInfo {
+  name: string;
+  description: string;
+  path: string;
+}
+
+interface ActionRequest {
+  action_id: string;
+  tool?: string;
+  required_mode?: string;
+  message?: string;
+}
+
 export default function ChatPage() {
   const [token, setToken] = useState<string | null>(null);
   const [showLogin, setShowLogin] = useState(true);
@@ -59,7 +74,7 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string>('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [actionReq, setActionReq] = useState<any>(null);
+  const [actionReq, setActionReq] = useState<ActionRequest | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { message } = AntdApp.useApp();
@@ -78,7 +93,7 @@ export default function ChatPage() {
   ]);
 
   const [showSkillsModal, setShowSkillsModal] = useState(false);
-  const [skills, setSkills] = useState<{name: string, description: string, path: string}[]>([]);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillSearch, setSkillSearch] = useState('');
 
@@ -96,35 +111,7 @@ export default function ChatPage() {
     }
   };
 
-  useEffect(() => {
-    if (skills.length === 0) loadSkills();
-  }, []);
-
   const activeSession = sessions.find(s => s.id === activeSessionId);
-
-  const [mounted, setMounted] = useState(false);
-
-  // 初始化检查登录状态
-  useEffect(() => {
-    setMounted(true);
-    const searchParams = new URLSearchParams(window.location.search);
-    const isShared = searchParams.get('share') === 'true';
-    const sharedSessionId = searchParams.get('session');
-    
-    if (isShared && sharedSessionId) {
-      setShowLogin(false);
-      // 直接匿名请求该 session
-      loadSessionDetail(sharedSessionId, '', []);
-      return;
-    }
-
-    const savedToken = localStorage.getItem('claw_token');
-    if (savedToken) {
-      setToken(savedToken);
-      setShowLogin(false);
-      loadSessions(savedToken);
-    }
-  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -231,7 +218,7 @@ export default function ChatPage() {
     }
   };
 
-  const loadSessionDetail = async (id: string, authToken: string, sessionList: any[]) => {
+  const loadSessionDetail = async (id: string, authToken: string, sessionList: SessionSummary[]) => {
     try {
       const res = await fetch(apiUrl(`/v1/sessions/${id}`), {
         headers: { Authorization: `Bearer ${authToken}` }
@@ -317,6 +304,36 @@ export default function ChatPage() {
     }
   };
 
+  useEffect(() => {
+    if (skills.length !== 0) return;
+    queueMicrotask(() => {
+      void loadSkills();
+    });
+  }, [skills.length]);
+
+  // 初始化检查登录状态
+  useEffect(() => {
+    queueMicrotask(() => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const isShared = searchParams.get('share') === 'true';
+      const sharedSessionId = searchParams.get('session');
+
+      if (isShared && sharedSessionId) {
+        setShowLogin(false);
+        // 直接匿名请求该 session
+        void loadSessionDetail(sharedSessionId, '', []);
+        return;
+      }
+
+      const savedToken = localStorage.getItem('claw_token');
+      if (savedToken) {
+        setToken(savedToken);
+        setShowLogin(false);
+        void loadSessions(savedToken);
+      }
+    });
+  }, []);
+
   const handleLogin = async () => {
     if (!email || !password) return message.warning('请输入邮箱和密码');
     setLoginLoading(true);
@@ -343,15 +360,15 @@ export default function ChatPage() {
     }
   };
 
-  const handleLogout = () => {
+  function handleLogout() {
     localStorage.removeItem('claw_token');
     setToken(null);
     setSessions([]);
     setActiveSessionId('');
     setShowLogin(true);
-  };
+  }
 
-  const createNewSession = () => {
+  function createNewSession() {
     const newSession: Session = {
       id: generateId(),
       title: '新的对话',
@@ -359,7 +376,7 @@ export default function ChatPage() {
     };
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
-  };
+  }
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -439,6 +456,7 @@ export default function ChatPage() {
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
 
     const ctrl = new AbortController();
+    let streamCompleted = false;
 
     try {
       await fetchEventSource(apiUrl('/v1/chat/completions'), {
@@ -456,8 +474,8 @@ export default function ChatPage() {
         signal: ctrl.signal,
         onmessage(ev) {
           if (ev.event === 'done' || ev.data === '[DONE]') {
+            streamCompleted = true;
             setLoading(false);
-            ctrl.abort();
             return;
           }
           if (ev.event === 'message') {
@@ -537,22 +555,31 @@ export default function ChatPage() {
             } catch(e) {
               console.warn('Failed to parse action_required:', e);
             }
+          } else if (ev.event === 'runtime_error') {
+            streamCompleted = true;
+            setLoading(false);
+            message.error(ev.data || '对话执行失败');
           }
         },
-        onerror(err) {
-          console.error('SSE Error:', err);
+        onclose() {
+          streamCompleted = true;
           setLoading(false);
-          ctrl.abort();
+        },
+        onerror(err) {
+          if (!streamCompleted) {
+            console.error('SSE Error:', err);
+          }
+          setLoading(false);
           throw err;
         },
       });
     } catch (err) {
-      console.error(err);
+      if (!streamCompleted) {
+        console.error(err);
+      }
       setLoading(false);
     }
   };
-
-  if (!mounted) return null;
 
   return (
     <div style={{ height: '100vh', display: 'flex', backgroundColor: '#fff' }}>
@@ -741,7 +768,7 @@ export default function ChatPage() {
                       toolCalls: msg.toolCalls,
                       parsed
                     }
-                  } as any
+                  } as unknown as NonNullable<React.ComponentProps<typeof ChatList>['data']>[number]
                 })}
                 renderMessages={{
                   user: ({ content }) => {

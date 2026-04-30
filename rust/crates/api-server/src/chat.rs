@@ -160,7 +160,23 @@ pub async fn chat_completions(
             runtime.session_mut().messages.pop();
             // -----------------------------------------------------
 
-            let _ = runtime.run_turn(input, Some(&mut prompter));
+            let turn_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                runtime.run_turn(input, Some(&mut prompter))
+            }));
+            let turn_error = match turn_result {
+                Ok(Ok(_summary)) => None,
+                Ok(Err(error)) => Some(error.to_string()),
+                Err(_) => {
+                    Some("Conversation runtime panicked while processing the turn".to_string())
+                }
+            };
+            if let Some(error) = turn_error {
+                tracing::error!("Chat turn failed for session {}: {}", session_id, error);
+                let _ = tokio::runtime::Handle::current().block_on(async {
+                    tx.send(Event::default().event("runtime_error").data(error))
+                        .await
+                });
+            }
         }
 
         // 保存更新后的 Session 回数据库
