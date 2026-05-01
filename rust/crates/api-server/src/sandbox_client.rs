@@ -265,25 +265,35 @@ impl OpenSandboxClient {
 
         tracing::info!("Sandbox created: {}", data.sandbox_id);
 
-        // Wait for sandbox to be healthy (simple retry with ping). Reduced to 15 (30s) to fail fast.
-        self.wait_for_ready(&data.sandbox_id, 15).await?;
+        // Wait for sandbox to be healthy. 30 attempts × 2s = 60s max.
+        // With server-proxy mode, execd just needs time to start; connections will succeed once it's up.
+        self.wait_for_ready(&data.sandbox_id, 30).await?;
 
         Ok(data.sandbox_id)
     }
 
     // ────────── Lifecycle: Resolve execd endpoint ──────────
 
-    /// Get the execd proxy endpoint URL for a sandbox.
-    /// When `use_server_proxy=true`, the server acts as a reverse proxy to the sandbox's execd.
+    /// Get the execd endpoint URL for a sandbox.
+    ///
+    /// Strategy: use OpenSandbox's **server proxy** to reach execd on port 44772.
+    /// gVisor (runsc) containers break Docker's direct port forwarding (iptables DNAT),
+    /// so direct host-mapped ports are unreachable. The server proxy routes traffic
+    /// through the OpenSandbox process itself, which CAN reach the container's internal
+    /// network via docker-proxy / embedding proxy.
     async fn get_execd_url(&self, sandbox_id: &str) -> Result<String, String> {
-        // OpenSandbox execd listens on 44772 by default. Port 8080 is a user workload port,
-        // so probing it can hang forever when the sandbox entrypoint does not serve HTTP.
         let env_port = env::var("OPENSANDBOX_EXECD_PORT")
             .or_else(|_| env::var("SANDBOX_EXECD_PORT"))
             .ok();
         let port = execd_port_from_env(env_port.as_deref());
-        let url = format!("{}{}", self.base_url, execd_endpoint_path(sandbox_id, port));
-        tracing::debug!("Resolving execd endpoint: GET {}", url);
+
+        // Use use_server_proxy=true so OpenSandbox returns its own proxy path
+        // e.g. "10.50.70.91:28080/sandboxes/{id}/proxy/44772"
+        let url = format!(
+            "{}/sandboxes/{}/endpoints/{}?use_server_proxy=true",
+            self.base_url, sandbox_id, port
+        );
+        tracing::debug!("Resolving execd endpoint (server-proxy): GET {}", url);
 
         let res = self
             .client
@@ -306,28 +316,17 @@ impl OpenSandboxClient {
             .await
             .map_err(|e| format!("Failed to parse endpoint response: {}", e))?;
 
-        // endpoint is usually like "10.0.0.12:43555" or "0.0.0.0:43555".
-        // If api-server is running on a different machine (e.g. Windows), it cannot reach 10.0.0.12 or 0.0.0.0.
-        // We extract the port and combine it with the known reachable host of self.base_url.
-        let parsed_base =
-            reqwest::Url::parse(&self.base_url).map_err(|e| format!("Invalid base_url: {}", e))?;
-
-        let port = endpoint
-            .endpoint
-            .split(':')
-            .next_back()
-            .unwrap_or(&endpoint.endpoint);
-
-        let final_url = format!(
-            "{}://{}:{}",
-            parsed_base.scheme(),
-            parsed_base.host_str().unwrap_or("127.0.0.1"),
-            port
-        );
+        // The returned endpoint looks like "10.50.70.91:28080/sandboxes/{id}/proxy/44772"
+        // Ensure it has an http:// scheme prefix.
+        let final_url = if endpoint.endpoint.starts_with("http") {
+            endpoint.endpoint.clone()
+        } else {
+            format!("http://{}", endpoint.endpoint)
+        };
 
         tracing::debug!(
-            "Rewrote returned endpoint {} to {}",
-            endpoint.endpoint,
+            "Resolved execd endpoint for sandbox {}: {}",
+            sandbox_id,
             final_url
         );
 
