@@ -463,9 +463,17 @@ impl OpenSandboxClient {
             ));
         }
 
-        // Parse SSE stream from response body
+        // Parse response body (SSE, raw JSON lines, or concatenated JSON objects)
         let body = res.text().await.unwrap_or_default();
-        self.parse_command_sse(&body)
+        let result = self.parse_command_sse(&body)?;
+        tracing::debug!(
+            "Command result for sandbox {}: exit_code={}, stdout_len={}, stderr_len={}",
+            sandbox_id,
+            result.exit_code,
+            result.stdout.len(),
+            result.stderr.len()
+        );
+        Ok(result)
     }
 
     pub async fn upload_file_bytes(
@@ -561,38 +569,28 @@ impl OpenSandboxClient {
     ///      data: {"type":"stdout","text":"...","timestamp":1234}
     /// 2. Raw JSON lines (returned by OpenSandbox server-proxy):
     ///      {"type":"stdout","text":"...","timestamp":1234}
+    /// 3. Concatenated JSON objects on a single line (proxy may omit newlines):
+    ///      {"type":"init",...}{"type":"stdout",...}{"type":"execution_complete",...}
     fn parse_command_sse(&self, body: &str) -> Result<ExecCommandRes, String> {
         let mut stdout_parts: Vec<String> = Vec::new();
         let mut stderr_parts: Vec<String> = Vec::new();
-        let mut exit_code: i32 = 0; // default success if no error event
+        let mut exit_code: i32 = 0;
         let mut got_error = false;
         let mut got_complete = false;
 
-        for line in body.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
+        tracing::trace!(
+            "Execd raw response ({} bytes): {}",
+            body.len(),
+            &body[..body.len().min(1000)]
+        );
 
-            // Skip SSE metadata lines
-            if line.starts_with("event:") || line.starts_with("id:") || line.starts_with("retry:") || line.starts_with(':') {
-                continue;
-            }
+        // Collect all JSON fragments from the body. The proxy may return:
+        // - One JSON object per line (separated by newlines)
+        // - Multiple JSON objects concatenated on one line: {...}{...}{...}
+        // - SSE formatted: "data: {...}\n"
+        let json_fragments = Self::extract_json_fragments(body);
 
-            // Extract the JSON payload: strip "data:" prefix if present,
-            // otherwise treat the entire line as a JSON object.
-            let data_str = if line.starts_with("data:") {
-                line.trim_start_matches("data:").trim()
-            } else if line.starts_with('{') {
-                line
-            } else {
-                continue;
-            };
-
-            if data_str.is_empty() {
-                continue;
-            }
-
+        for data_str in &json_fragments {
             let Ok(v) = serde_json::from_str::<Value>(data_str) else {
                 tracing::debug!(
                     "Skipping unparseable execd data: {}",
@@ -601,7 +599,6 @@ impl OpenSandboxClient {
                 continue;
             };
 
-            // Determine event type from the "type" field in JSON
             let event_type = match v.get("type").and_then(|t| t.as_str()) {
                 Some(t) => t,
                 None => continue,
@@ -656,8 +653,18 @@ impl OpenSandboxClient {
 
         if !got_error && !got_complete && stdout_parts.is_empty() && stderr_parts.is_empty() {
             tracing::warn!(
-                "No output events received from execd; raw body (first 500 chars): {}",
+                "No output events received from execd ({} fragments parsed from {} bytes); raw body (first 500 chars): {}",
+                json_fragments.len(),
+                body.len(),
                 &body[..body.len().min(500)]
+            );
+        } else {
+            tracing::debug!(
+                "Execd parsed: {} stdout parts, {} stderr parts, exit_code={}, complete={}",
+                stdout_parts.len(),
+                stderr_parts.len(),
+                exit_code,
+                got_complete
             );
         }
 
@@ -666,6 +673,69 @@ impl OpenSandboxClient {
             stderr: stderr_parts.join(""),
             exit_code,
         })
+    }
+
+    /// Extract individual JSON object strings from a response body.
+    /// Handles: newline-separated JSON, SSE `data:` lines, and concatenated `{...}{...}` objects.
+    fn extract_json_fragments(body: &str) -> Vec<String> {
+        let mut fragments = Vec::new();
+
+        for line in body.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            // Skip SSE metadata lines
+            if line.starts_with("event:") || line.starts_with("id:") || line.starts_with("retry:") || line.starts_with(':') {
+                continue;
+            }
+
+            // Strip "data:" prefix if present
+            let payload = if line.starts_with("data:") {
+                line.trim_start_matches("data:").trim()
+            } else {
+                line
+            };
+
+            if payload.is_empty() || !payload.contains('{') {
+                continue;
+            }
+
+            // If it's a single clean JSON object, use it directly
+            if let Ok(_) = serde_json::from_str::<Value>(payload) {
+                fragments.push(payload.to_string());
+                continue;
+            }
+
+            // Otherwise, split concatenated JSON objects: {...}{...}{...}
+            // Use brace-depth counting to find boundaries
+            let mut depth = 0i32;
+            let mut start = None;
+            for (i, ch) in payload.char_indices() {
+                match ch {
+                    '{' => {
+                        if depth == 0 {
+                            start = Some(i);
+                        }
+                        depth += 1;
+                    }
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            if let Some(s) = start {
+                                let fragment = &payload[s..=i];
+                                fragments.push(fragment.to_string());
+                            }
+                            start = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        fragments
     }
 
     // ────────── Lifecycle: Renew Expiration ──────────
