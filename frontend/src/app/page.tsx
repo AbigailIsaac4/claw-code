@@ -5,7 +5,7 @@ import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event
 import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp } from 'antd';
 import { Markdown, DraggablePanel, SideNav, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
-import { PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, ShareAltOutlined } from '@ant-design/icons';
+import { PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, ShareAltOutlined, CopyOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -771,9 +771,11 @@ export default function ChatPage() {
           logo={
             <div style={{ display: 'flex', alignItems: 'baseline', whiteSpace: 'nowrap', gap: 16 }}>
               <Text strong style={{ fontSize: 16 }}>{activeSession?.title}</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {activeSession?.messages.length || 0} 条消息
-              </Text>
+              {activeSession && activeSession.messages.length > 0 && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {activeSession.messages.length} 条消息
+                </Text>
+              )}
             </div>
           }
           actions={
@@ -813,9 +815,12 @@ export default function ChatPage() {
                     role: msg.role === 'user' ? 'user' : 'assistant',
                     content: msg.content || ' ',
                     createAt: 0, // Avoid hydration mismatch
-                    meta: {
-                      avatar: msg.role === 'user' ? '🧑‍💻' : '🤖',
-                      title: msg.role === 'user' ? 'You' : 'Claw Agent',
+                    meta: msg.role === 'user' ? {
+                      title: '',
+                    } : {
+                      avatar: '✦',
+                      title: 'Agent',
+                      backgroundColor: '#f0f5ff',
                     },
                     extra: {
                       toolCalls: msg.toolCalls,
@@ -828,6 +833,14 @@ export default function ChatPage() {
                     const uploadRegex = /我已上传文件至沙箱路径：([^\s，]+)，请分析。/;
                     const match = content.match(uploadRegex);
                     
+                    const handleCopy = () => {
+                      navigator.clipboard.writeText(content).then(() => {
+                        message.success('已复制到剪贴板');
+                      }).catch(() => {
+                        message.error('复制失败');
+                      });
+                    };
+
                     if (match) {
                       const cleanContent = content.replace(uploadRegex, '').trim();
                       const filePath = match[1];
@@ -839,17 +852,32 @@ export default function ChatPage() {
                             <PaperClipOutlined style={{ color: '#1677ff', fontSize: 16 }} />
                             <Text strong style={{ fontSize: 13 }}>{fileName}</Text>
                           </div>
+                          <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} style={{ opacity: 0.5 }} />
                         </div>
                       );
                     }
-                    return <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>;
-                  },
-                  assistant: ({ extra }) => {
-                    const parsed = extra?.parsed;
                     return (
-                      <div style={{ wordBreak: 'break-word', lineHeight: 1.6 }}>
+                      <div style={{ position: 'relative' }}>
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
+                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} style={{ position: 'absolute', top: -4, right: -32, opacity: 0.35 }} />
+                      </div>
+                    );
+                  },
+                  assistant: ({ extra, content }) => {
+                    const parsed = extra?.parsed;
+                    const handleCopyAssistant = () => {
+                      const text = parsed?.cleanContent || content || '';
+                      navigator.clipboard.writeText(text).then(() => {
+                        message.success('已复制到剪贴板');
+                      }).catch(() => {
+                        message.error('复制失败');
+                      });
+                    };
+                    return (
+                      <div style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
                         <ThinkingBlock content={parsed?.thinkingBlock} />
                         <Markdown>{parsed?.cleanContent || ''}</Markdown>
+                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopyAssistant} style={{ position: 'absolute', top: -4, right: -8, opacity: 0.35 }} />
                       </div>
                     );
                   }
