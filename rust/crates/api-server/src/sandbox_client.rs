@@ -554,15 +554,13 @@ impl OpenSandboxClient {
         ))
     }
 
-    /// Parse the SSE response from the execd /command endpoint.
+    /// Parse the response from the execd /command endpoint.
     ///
-    /// The execd service sends `data:` lines with self-describing JSON events:
-    ///   data: {"type":"stdout","text":"...","timestamp":1234}
-    ///   data: {"type":"stderr","text":"...","timestamp":1234}
-    ///   data: {"type":"error","error":{"name":"...","value":"1","traceback":"..."},"timestamp":1234}
-    ///   data: {"type":"execution_complete","timestamp":1234}
-    ///
-    /// Also supports standard SSE format (event:/data: pairs) as fallback.
+    /// Supports two formats:
+    /// 1. Standard SSE with `data:` prefix:
+    ///      data: {"type":"stdout","text":"...","timestamp":1234}
+    /// 2. Raw JSON lines (returned by OpenSandbox server-proxy):
+    ///      {"type":"stdout","text":"...","timestamp":1234}
     fn parse_command_sse(&self, body: &str) -> Result<ExecCommandRes, String> {
         let mut stdout_parts: Vec<String> = Vec::new();
         let mut stderr_parts: Vec<String> = Vec::new();
@@ -570,47 +568,46 @@ impl OpenSandboxClient {
         let mut got_error = false;
         let mut got_complete = false;
 
-        // Fallback: track event: lines for standard SSE format
-        let mut current_event = String::new();
-
         for line in body.lines() {
             let line = line.trim();
             if line.is_empty() {
-                current_event.clear();
                 continue;
             }
 
-            if line.starts_with("event:") {
-                current_event = line.trim_start_matches("event:").trim().to_string();
+            // Skip SSE metadata lines
+            if line.starts_with("event:") || line.starts_with("id:") || line.starts_with("retry:") || line.starts_with(':') {
                 continue;
             }
 
-            // Skip non-data lines (comments, id:, retry:)
-            if !line.starts_with("data:") {
+            // Extract the JSON payload: strip "data:" prefix if present,
+            // otherwise treat the entire line as a JSON object.
+            let data_str = if line.starts_with("data:") {
+                line.trim_start_matches("data:").trim()
+            } else if line.starts_with('{') {
+                line
+            } else {
                 continue;
-            }
+            };
 
-            let data_str = line.trim_start_matches("data:").trim();
             if data_str.is_empty() {
                 continue;
             }
 
             let Ok(v) = serde_json::from_str::<Value>(data_str) else {
                 tracing::debug!(
-                    "Skipping unparseable SSE data: {}",
+                    "Skipping unparseable execd data: {}",
                     &data_str[..data_str.len().min(100)]
                 );
                 continue;
             };
 
-            // Determine event type: prefer "type" field in JSON, fall back to event: line
-            let event_type = v
-                .get("type")
-                .and_then(|t| t.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| current_event.clone());
+            // Determine event type from the "type" field in JSON
+            let event_type = match v.get("type").and_then(|t| t.as_str()) {
+                Some(t) => t,
+                None => continue,
+            };
 
-            match event_type.as_str() {
+            match event_type {
                 "stdout" => {
                     if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
                         stdout_parts.push(text.to_string());
@@ -623,7 +620,6 @@ impl OpenSandboxClient {
                 }
                 "error" => {
                     got_error = true;
-                    // Exit code from error.value (SDK pattern)
                     if let Some(err_obj) = v.get("error") {
                         if let Some(val) = err_obj.get("value").and_then(|v| v.as_str()) {
                             exit_code = val.parse::<i32>().unwrap_or(1);
@@ -638,7 +634,6 @@ impl OpenSandboxClient {
                     }
                 }
                 "result" | "complete" => {
-                    // Legacy format: {"exitCode": 0}
                     if let Some(code) = v
                         .get("exitCode")
                         .or(v.get("exit_code"))
@@ -649,23 +644,20 @@ impl OpenSandboxClient {
                 }
                 "execution_complete" => {
                     got_complete = true;
-                    // Successful completion with no error means exit_code = 0
                 }
-                "init" | "execution_count" => {
+                "init" | "execution_count" | "ping" => {
                     // Informational, skip
                 }
                 _ => {
-                    tracing::debug!("Unknown execd SSE event type: {}", event_type);
+                    tracing::debug!("Unknown execd event type: {}", event_type);
                 }
             }
         }
 
-        // If we got neither an explicit error nor a completion event, and there's
-        // no stdout/stderr at all, the command may have failed silently
         if !got_error && !got_complete && stdout_parts.is_empty() && stderr_parts.is_empty() {
             tracing::warn!(
-                "No output events received from execd; raw body length = {}",
-                body.len()
+                "No output events received from execd; raw body (first 500 chars): {}",
+                &body[..body.len().min(500)]
             );
         }
 
