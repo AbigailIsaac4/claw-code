@@ -55,9 +55,17 @@ pub(crate) fn shell_quote(input: &str) -> String {
     format!("'{}'", input.replace('\'', "'\\''"))
 }
 
+pub(crate) fn execd_port_from_env(value: Option<&str>) -> u16 {
+    value.and_then(|value| value.parse().ok()).unwrap_or(44_772)
+}
+
+pub(crate) fn execd_endpoint_path(sandbox_id: &str, port: u16) -> String {
+    format!("/sandboxes/{sandbox_id}/endpoints/{port}?use_server_proxy=false")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_workspace_path, shell_quote};
+    use super::{execd_endpoint_path, execd_port_from_env, sanitize_workspace_path, shell_quote};
 
     #[test]
     fn sanitize_workspace_path_rejects_workspace_escape() {
@@ -80,6 +88,19 @@ mod tests {
         assert_eq!(
             shell_quote("/workspace/a'b.txt"),
             "'/workspace/a'\\''b.txt'"
+        );
+    }
+
+    #[test]
+    fn default_execd_port_matches_opensandbox_daemon_port() {
+        assert_eq!(execd_port_from_env(None), 44772);
+    }
+
+    #[test]
+    fn execd_endpoint_path_uses_configured_daemon_port() {
+        assert_eq!(
+            execd_endpoint_path("sandbox-123", 44772),
+            "/sandboxes/sandbox-123/endpoints/44772?use_server_proxy=false"
         );
     }
 }
@@ -255,14 +276,13 @@ impl OpenSandboxClient {
     /// Get the execd proxy endpoint URL for a sandbox.
     /// When `use_server_proxy=true`, the server acts as a reverse proxy to the sandbox's execd.
     async fn get_execd_url(&self, sandbox_id: &str) -> Result<String, String> {
-        // We use use_server_proxy=false to get the direct host mapped port.
-        // The sandbox server (especially with runsc/gVisor) often fails to connect to the internal container IP (172.17.0.x),
-        // resulting in a 502 Bad Gateway when use_server_proxy=true.
-        // By connecting to the mapped host port directly, we bypass the internal routing issues.
-        let url = format!(
-            "{}/sandboxes/{}/endpoints/8080?use_server_proxy=false",
-            self.base_url, sandbox_id
-        );
+        // OpenSandbox execd listens on 44772 by default. Port 8080 is a user workload port,
+        // so probing it can hang forever when the sandbox entrypoint does not serve HTTP.
+        let env_port = env::var("OPENSANDBOX_EXECD_PORT")
+            .or_else(|_| env::var("SANDBOX_EXECD_PORT"))
+            .ok();
+        let port = execd_port_from_env(env_port.as_deref());
+        let url = format!("{}{}", self.base_url, execd_endpoint_path(sandbox_id, port));
         tracing::debug!("Resolving execd endpoint: GET {}", url);
 
         let res = self

@@ -1,5 +1,8 @@
 use crate::sandbox_client::{sanitize_workspace_path, OpenSandboxClient};
-use crate::state::{ensure_sandbox_id, remove_sandbox_id, SandboxSessions};
+use crate::state::{
+    append_active_assistant_text, ensure_sandbox_id, push_active_assistant_tool_use,
+    push_active_tool_result, remove_sandbox_id, ActiveTurns, SandboxSessions,
+};
 use api::{MessageRequest, OpenAiCompatClient};
 use axum::response::sse::Event;
 use runtime::{
@@ -20,6 +23,9 @@ static ACTION_COUNTER: AtomicUsize = AtomicUsize::new(1);
 pub struct WebApiClient {
     pub client: OpenAiCompatClient,
     pub tx: Sender<Event>,
+    pub active_turns: ActiveTurns,
+    pub user_id: String,
+    pub session_id: String,
 }
 
 impl ApiClient for WebApiClient {
@@ -110,6 +116,13 @@ impl ApiClient for WebApiClient {
                             for block in start.message.content {
                                 match block {
                                     api::OutputContentBlock::Text { text } if !text.is_empty() => {
+                                        append_active_assistant_text(
+                                            &self.active_turns,
+                                            &self.user_id,
+                                            &self.session_id,
+                                            &text,
+                                        )
+                                        .await;
                                         let _ = self
                                             .tx
                                             .send(
@@ -131,6 +144,15 @@ impl ApiClient for WebApiClient {
                                         } else {
                                             input.to_string()
                                         };
+                                        push_active_assistant_tool_use(
+                                            &self.active_turns,
+                                            &self.user_id,
+                                            &self.session_id,
+                                            id.clone(),
+                                            name.clone(),
+                                            input_str.clone(),
+                                        )
+                                        .await;
                                         events.push(AssistantEvent::ToolUse {
                                             id,
                                             name,
@@ -159,6 +181,13 @@ impl ApiClient for WebApiClient {
                         }
                         api::StreamEvent::ContentBlockDelta(delta) => match delta.delta {
                             api::ContentBlockDelta::TextDelta { text } if !text.is_empty() => {
+                                append_active_assistant_text(
+                                    &self.active_turns,
+                                    &self.user_id,
+                                    &self.session_id,
+                                    &text,
+                                )
+                                .await;
                                 let _ = self
                                     .tx
                                     .send(Event::default().event("message").data(text.clone()))
@@ -174,6 +203,15 @@ impl ApiClient for WebApiClient {
                         },
                         api::StreamEvent::ContentBlockStop(_) => {
                             if let Some((id, name, input)) = pending_tool.take() {
+                                push_active_assistant_tool_use(
+                                    &self.active_turns,
+                                    &self.user_id,
+                                    &self.session_id,
+                                    id.clone(),
+                                    name.clone(),
+                                    input.clone(),
+                                )
+                                .await;
                                 events.push(AssistantEvent::ToolUse { id, name, input });
                             }
                         }
@@ -196,6 +234,7 @@ pub struct WebToolExecutor {
     pub tx: Sender<Event>,
     pub sandbox_client: OpenSandboxClient,
     pub sandbox_sessions: SandboxSessions,
+    pub active_turns: ActiveTurns,
     pub user_id: String,
     pub session_id: String,
     pub sandbox_id: Option<String>,
@@ -214,12 +253,14 @@ impl WebToolExecutor {
         session_id: String,
         sandbox_client: OpenSandboxClient,
         sandbox_sessions: SandboxSessions,
+        active_turns: ActiveTurns,
         permission_mode: runtime::PermissionMode,
     ) -> Self {
         Self {
             tx,
             sandbox_client,
             sandbox_sessions,
+            active_turns,
             user_id,
             session_id,
             sandbox_id: None,
@@ -563,6 +604,15 @@ impl ToolExecutor for WebToolExecutor {
             Ok(output) => {
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
+                        push_active_tool_result(
+                            &self.active_turns,
+                            &self.user_id,
+                            &self.session_id,
+                            tool_name.to_string(),
+                            output.clone(),
+                            false,
+                        )
+                        .await;
                         let sse_data = serde_json::to_string(&serde_json::json!({
                             "tool": tool_name,
                             "result": output
@@ -578,6 +628,15 @@ impl ToolExecutor for WebToolExecutor {
             Err(e) => {
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
+                        push_active_tool_result(
+                            &self.active_turns,
+                            &self.user_id,
+                            &self.session_id,
+                            tool_name.to_string(),
+                            e.to_string(),
+                            true,
+                        )
+                        .await;
                         let sse_data = serde_json::to_string(&serde_json::json!({
                             "tool": tool_name,
                             "error": e.to_string()

@@ -1,33 +1,26 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { fetchEventSource } from '@microsoft/fetch-event-source';
-import { Button, Input, Modal, Typography, Card, Space, Popconfirm, Avatar, Tooltip, Segmented, Popover, Collapse, App as AntdApp, Tag } from 'antd';
-import { Markdown, DraggablePanel, SideNav, ActionIcon, Header } from '@lobehub/ui';
-import { ChatList } from '@lobehub/ui/chat';
-import { SendOutlined, PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, PlayCircleOutlined, ShareAltOutlined } from '@ant-design/icons';
+import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
+import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp } from 'antd';
+import { Markdown, DraggablePanel, SideNav, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
+import { ChatList, LoadingDots } from '@lobehub/ui/chat';
+import { PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, ShareAltOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
 import { WorkspaceFiles } from '@/components/chat/WorkspaceFiles';
 import { ToolRenderer } from '@/components/chat/ToolRenderer';
 import { ChatInputBox } from '@/components/chat/ChatInputBox';
+import { normalizeHydratedMessages, type HydratedMessage, type HydratedToolCall } from '@/utils/sessionHydration';
 
-const { TextArea } = Input;
 const { Text } = Typography;
 
 const generateId = () => `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
-interface ToolCall {
-  id: string;
-  name: string;
-  input: string;
-  result?: string;
-  error?: string;
-  status: 'running' | 'done' | 'error';
-}
+type ToolCall = HydratedToolCall;
 
 interface Todo {
   content: string;
@@ -35,20 +28,24 @@ interface Todo {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  toolCalls?: ToolCall[];
-}
+type Message = HydratedMessage;
 
 interface Session {
   id: string;
   title: string;
   messages: Message[];
+  active?: boolean;
 }
 
 type SessionSummary = Pick<Session, 'id' | 'title'>;
+
+const withAssistantTail = (messages: Message[]) => {
+  const nextMessages = [...messages];
+  if (nextMessages.at(-1)?.role !== 'assistant') {
+    nextMessages.push({ id: generateId(), role: 'assistant', content: '', streaming: true });
+  }
+  return nextMessages;
+};
 
 interface SkillInfo {
   name: string;
@@ -76,7 +73,8 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [actionReq, setActionReq] = useState<ActionRequest | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadingRef = useRef(false);
+  const streamingSessionRef = useRef<string | null>(null);
   const { message } = AntdApp.useApp();
 
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -112,6 +110,29 @@ export default function ChatPage() {
   };
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
+
+  const setConversationLoading = (value: boolean) => {
+    loadingRef.current = value;
+    setLoading(value);
+  };
+
+  function handleLogout() {
+    localStorage.removeItem('claw_token');
+    setToken(null);
+    setSessions([]);
+    setActiveSessionId('');
+    setShowLogin(true);
+  }
+
+  function createNewSession() {
+    const newSession: Session = {
+      id: generateId(),
+      title: '新的对话',
+      messages: []
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -152,7 +173,7 @@ export default function ChatPage() {
       } else {
         message.error({ content: '上传失败: ' + (data.error || '未知错误'), key: 'upload' });
       }
-    } catch (err) {
+    } catch {
       message.error({ content: '网络错误，无法连接沙箱', key: 'upload' });
     }
     e.target.value = '';
@@ -192,7 +213,7 @@ export default function ChatPage() {
       a.click();
       document.body.removeChild(a);
       message.success({ content: '下载成功', key: 'download' });
-    } catch (err) {
+    } catch {
       message.error({ content: '下载出错', key: 'download' });
     }
   };
@@ -255,7 +276,7 @@ export default function ChatPage() {
                   try {
                     const inputArgs = typeof block.input === 'string' ? JSON.parse(block.input) : block.input;
                     if (inputArgs.todos) sessionTodos = inputArgs.todos;
-                  } catch(e) {}
+                  } catch {}
                 }
                 currentAssistant.toolCalls!.push({
                   id: block.id || generateId(),
@@ -284,20 +305,32 @@ export default function ChatPage() {
           messages.push(currentAssistant);
         }
         
+        const isActiveTurn = Boolean(state.active_turn);
+        const loadedMessages = normalizeHydratedMessages(messages, {
+          activeTurn: isActiveTurn,
+          generateId,
+        });
+
         const loadedSession = {
           id,
           title: sessionList.find(s => s.id === id)?.title || '历史会话',
-          messages
+          messages: loadedMessages,
+          active: isActiveTurn,
         };
         
         setTodos(sessionTodos);
         
         setSessions(prev => {
           const list = prev.length > 0 ? prev : sessionList.map(s => ({ id: s.id, title: s.title, messages: [] }));
-          const next = list.map(s => s.id === id ? loadedSession : s);
-          return next;
+          if (!list.some(s => s.id === id)) {
+            return [loadedSession, ...list];
+          }
+          return list.map(s => s.id === id ? loadedSession : s);
         });
         setActiveSessionId(id);
+        if (streamingSessionRef.current !== id) {
+          setConversationLoading(isActiveTurn);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -309,6 +342,7 @@ export default function ChatPage() {
     queueMicrotask(() => {
       void loadSkills();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skills.length]);
 
   // 初始化检查登录状态
@@ -332,7 +366,20 @@ export default function ChatPage() {
         void loadSessions(savedToken);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!token || !activeSessionId || !loading) return;
+    if (streamingSessionRef.current === activeSessionId) return;
+
+    const timer = window.setInterval(() => {
+      void loadSessionDetail(activeSessionId, token, sessions);
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId, loading, sessions, token]);
 
   const handleLogin = async () => {
     if (!email || !password) return message.warning('请输入邮箱和密码');
@@ -353,30 +400,12 @@ export default function ChatPage() {
       } else {
         message.error(data.message || '登录失败，请检查账号密码');
       }
-    } catch (e) {
+    } catch {
       message.error('网络错误');
     } finally {
       setLoginLoading(false);
     }
   };
-
-  function handleLogout() {
-    localStorage.removeItem('claw_token');
-    setToken(null);
-    setSessions([]);
-    setActiveSessionId('');
-    setShowLogin(true);
-  }
-
-  function createNewSession() {
-    const newSession: Session = {
-      id: generateId(),
-      title: '新的对话',
-      messages: []
-    };
-    setSessions(prev => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
-  }
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -436,7 +465,7 @@ export default function ChatPage() {
   };
 
   const sendMessage = async () => {
-    if ((!input.trim() && uploadedFiles.length === 0) || loading || !activeSession || !token) return;
+    if ((!input.trim() && uploadedFiles.length === 0) || loadingRef.current || !activeSession || !token) return;
 
     const sessionId = activeSessionId;
     let finalInput = input;
@@ -446,11 +475,12 @@ export default function ChatPage() {
     const userMsg: Message = { id: generateId(), role: 'user', content: finalInput };
     setUploadedFiles([]);
     
-    const messagesAfterUser = [...activeSession.messages, userMsg];
+    const messagesAfterUser = normalizeHydratedMessages([...activeSession.messages, userMsg]);
     updateSessionMessages(sessionId, messagesAfterUser);
     
     setInput('');
-    setLoading(true);
+    streamingSessionRef.current = sessionId;
+    setConversationLoading(true);
 
     const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '' };
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
@@ -472,16 +502,27 @@ export default function ChatPage() {
           permission_mode: agentMode,
         }),
         signal: ctrl.signal,
+        openWhenHidden: true,
+        async onopen(response) {
+          if (!response.ok) {
+            throw new Error(`SSE request failed with status ${response.status}`);
+          }
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.startsWith(EventStreamContentType)) {
+            throw new Error(`Expected SSE response, got ${contentType || 'empty content-type'}`);
+          }
+        },
         onmessage(ev) {
           if (ev.event === 'done' || ev.data === '[DONE]') {
             streamCompleted = true;
-            setLoading(false);
+            streamingSessionRef.current = null;
+            setConversationLoading(false);
             return;
           }
           if (ev.event === 'message') {
             setSessions(prev => prev.map(s => {
               if (s.id === sessionId) {
-                const nextMsgs = [...s.messages];
+                const nextMsgs = withAssistantTail(s.messages);
                 nextMsgs[nextMsgs.length - 1] = { 
                   ...nextMsgs[nextMsgs.length - 1], 
                   content: nextMsgs[nextMsgs.length - 1].content + ev.data 
@@ -497,11 +538,11 @@ export default function ChatPage() {
                 try {
                   const rawInput = typeof data.input === 'string' ? JSON.parse(data.input) : data.input;
                   if (rawInput.todos) setTodos(rawInput.todos);
-                } catch(e) {}
+                } catch {}
               }
               setSessions(prev => prev.map(s => {
                 if (s.id === sessionId) {
-                  const nextMsgs = [...s.messages];
+                  const nextMsgs = withAssistantTail(s.messages);
                   const lastMsg = nextMsgs[nextMsgs.length - 1];
                   const inputStr = typeof data.input === 'string' ? data.input : JSON.stringify(data.input);
                   const newToolCall: ToolCall = {
@@ -526,7 +567,7 @@ export default function ChatPage() {
               const data = JSON.parse(ev.data);
               setSessions(prev => prev.map(s => {
                 if (s.id === sessionId) {
-                  const nextMsgs = [...s.messages];
+                  const nextMsgs = withAssistantTail(s.messages);
                   const lastMsg = nextMsgs[nextMsgs.length - 1];
                   if (lastMsg.toolCalls) {
                     const calls = [...lastMsg.toolCalls];
@@ -556,20 +597,31 @@ export default function ChatPage() {
               console.warn('Failed to parse action_required:', e);
             }
           } else if (ev.event === 'runtime_error') {
+            if (ev.data.includes('已有一轮对话正在处理中')) {
+              streamCompleted = true;
+              streamingSessionRef.current = null;
+              void loadSessionDetail(sessionId, token, sessions);
+              return;
+            }
             streamCompleted = true;
-            setLoading(false);
+            streamingSessionRef.current = null;
+            setConversationLoading(false);
             message.error(ev.data || '对话执行失败');
           }
         },
         onclose() {
-          streamCompleted = true;
-          setLoading(false);
+          if (!streamCompleted) {
+            throw new Error('SSE connection closed before completion');
+          }
+          streamingSessionRef.current = null;
+          setConversationLoading(false);
         },
         onerror(err) {
           if (!streamCompleted) {
             console.error('SSE Error:', err);
           }
-          setLoading(false);
+          streamingSessionRef.current = null;
+          setConversationLoading(false);
           throw err;
         },
       });
@@ -577,7 +629,8 @@ export default function ChatPage() {
       if (!streamCompleted) {
         console.error(err);
       }
-      setLoading(false);
+      streamingSessionRef.current = null;
+      setConversationLoading(false);
     }
   };
 
@@ -733,7 +786,7 @@ export default function ChatPage() {
                     const shareUrl = `${window.location.origin}/?session=${activeSession?.id}&share=true`;
                     await navigator.clipboard.writeText(shareUrl);
                     message.success('分享链接已复制到剪贴板，他人可通过只读模式查看！');
-                  } catch (e) {
+                  } catch {
                     message.error('复制失败');
                   }
                 }} 
@@ -791,7 +844,7 @@ export default function ChatPage() {
                     }
                     return <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>;
                   },
-                  assistant: ({ content, extra }) => {
+                  assistant: ({ extra }) => {
                     const parsed = extra?.parsed;
                     return (
                       <div style={{ wordBreak: 'break-word', lineHeight: 1.6 }}>
@@ -830,8 +883,9 @@ export default function ChatPage() {
             )}
             
             {loading && (
-               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <Text type="secondary" style={{ fontStyle: 'italic' }}>Agent 正在处理...</Text>
+               <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 8 }}>
+                  <LoadingDots size={4} variant="typing" />
+                  <LobeText type="secondary" italic>Agent 正在处理...</LobeText>
                </div>
             )}
           </div>
@@ -842,7 +896,7 @@ export default function ChatPage() {
           {uploadedFiles.length > 0 && (
             <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {uploadedFiles.map(f => (
-                <Tag 
+                <LobeTag
                   key={f} 
                   closable 
                   onClose={() => setUploadedFiles(prev => prev.filter(p => p !== f))}
@@ -851,7 +905,7 @@ export default function ChatPage() {
                   style={{ padding: '4px 10px', borderRadius: 16, fontSize: 13 }}
                 >
                   {f.split('/').pop()}
-                </Tag>
+                </LobeTag>
               ))}
             </div>
           )}

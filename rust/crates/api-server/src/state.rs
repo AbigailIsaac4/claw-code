@@ -1,6 +1,6 @@
 use crate::sandbox_client::OpenSandboxClient;
 use api::{OpenAiCompatClient, OpenAiCompatConfig};
-use runtime::PermissionPromptDecision;
+use runtime::{ContentBlock, ConversationMessage, MessageRole, PermissionPromptDecision};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -12,6 +12,12 @@ pub enum SandboxSessionState {
 }
 
 pub type SandboxSessions = Arc<Mutex<HashMap<String, SandboxSessionState>>>;
+pub type ActiveTurns = Arc<Mutex<HashMap<String, ActiveTurnSnapshot>>>;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ActiveTurnSnapshot {
+    pub messages: Vec<ConversationMessage>,
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,6 +26,7 @@ pub struct AppState {
     pub sandbox_client: OpenSandboxClient,
     pub pending_actions: Arc<Mutex<HashMap<String, oneshot::Sender<PermissionPromptDecision>>>>,
     pub sandbox_sessions: SandboxSessions,
+    pub active_turns: ActiveTurns,
 }
 
 impl AppState {
@@ -42,6 +49,7 @@ impl AppState {
             sandbox_client,
             pending_actions: Arc::new(Mutex::new(HashMap::new())),
             sandbox_sessions: Arc::new(Mutex::new(HashMap::new())),
+            active_turns: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -190,9 +198,125 @@ fn sandbox_session_key(user_id: &str, session_id: &str) -> String {
     format!("{user_id}\0{session_id}")
 }
 
+pub async fn try_start_turn(active_turns: &ActiveTurns, user_id: &str, session_id: &str) -> bool {
+    let mut turns = active_turns.lock().await;
+    let key = sandbox_session_key(user_id, session_id);
+    if turns.contains_key(&key) {
+        return false;
+    }
+    turns.insert(key, ActiveTurnSnapshot::default());
+    true
+}
+
+pub async fn finish_turn(active_turns: &ActiveTurns, user_id: &str, session_id: &str) {
+    active_turns
+        .lock()
+        .await
+        .remove(&sandbox_session_key(user_id, session_id));
+}
+
+pub async fn active_turn_snapshot(
+    active_turns: &ActiveTurns,
+    user_id: &str,
+    session_id: &str,
+) -> Option<ActiveTurnSnapshot> {
+    active_turns
+        .lock()
+        .await
+        .get(&sandbox_session_key(user_id, session_id))
+        .cloned()
+}
+
+pub async fn append_active_assistant_text(
+    active_turns: &ActiveTurns,
+    user_id: &str,
+    session_id: &str,
+    text: &str,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    with_active_turn_snapshot(active_turns, user_id, session_id, |snapshot| match snapshot
+        .messages
+        .last_mut()
+    {
+        Some(message) if message.role == MessageRole::Assistant => {
+            match message.blocks.last_mut() {
+                Some(ContentBlock::Text { text: existing }) => existing.push_str(text),
+                _ => message.blocks.push(ContentBlock::Text {
+                    text: text.to_string(),
+                }),
+            }
+        }
+        _ => snapshot
+            .messages
+            .push(ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: text.to_string(),
+            }])),
+    })
+    .await;
+}
+
+pub async fn push_active_assistant_tool_use(
+    active_turns: &ActiveTurns,
+    user_id: &str,
+    session_id: &str,
+    id: String,
+    name: String,
+    input: String,
+) {
+    with_active_turn_snapshot(active_turns, user_id, session_id, |snapshot| {
+        let block = ContentBlock::ToolUse { id, name, input };
+        match snapshot.messages.last_mut() {
+            Some(message) if message.role == MessageRole::Assistant => message.blocks.push(block),
+            _ => snapshot
+                .messages
+                .push(ConversationMessage::assistant(vec![block])),
+        }
+    })
+    .await;
+}
+
+pub async fn push_active_tool_result(
+    active_turns: &ActiveTurns,
+    user_id: &str,
+    session_id: &str,
+    tool_name: String,
+    output: String,
+    is_error: bool,
+) {
+    with_active_turn_snapshot(active_turns, user_id, session_id, |snapshot| {
+        snapshot.messages.push(ConversationMessage::tool_result(
+            format!("active-{tool_name}"),
+            tool_name,
+            output,
+            is_error,
+        ));
+    })
+    .await;
+}
+
+async fn with_active_turn_snapshot(
+    active_turns: &ActiveTurns,
+    user_id: &str,
+    session_id: &str,
+    update: impl FnOnce(&mut ActiveTurnSnapshot),
+) {
+    let key = sandbox_session_key(user_id, session_id);
+    let mut turns = active_turns.lock().await;
+    if let Some(snapshot) = turns.get_mut(&key) {
+        update(snapshot);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ensure_sandbox_id_with_creator, SandboxSessions};
+    use super::{
+        active_turn_snapshot, append_active_assistant_text, ensure_sandbox_id_with_creator,
+        finish_turn, try_start_turn, ActiveTurns, SandboxSessions,
+    };
+    use runtime::{ContentBlock, ConversationMessage};
     use std::collections::HashMap;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
@@ -233,5 +357,41 @@ mod tests {
 
         assert_eq!(ids, vec!["sandbox-1"; 5]);
         assert_eq!(create_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn active_turn_registry_rejects_duplicate_session_until_finished() {
+        let active_turns: ActiveTurns = Arc::new(Mutex::new(HashMap::new()));
+
+        assert!(try_start_turn(&active_turns, "user", "session").await);
+        assert!(!try_start_turn(&active_turns, "user", "session").await);
+
+        finish_turn(&active_turns, "user", "session").await;
+        assert!(try_start_turn(&active_turns, "user", "session").await);
+    }
+
+    #[tokio::test]
+    async fn active_turn_snapshot_accumulates_streamed_assistant_text_until_finished() {
+        let active_turns: ActiveTurns = Arc::new(Mutex::new(HashMap::new()));
+
+        assert!(try_start_turn(&active_turns, "user", "session").await);
+        append_active_assistant_text(&active_turns, "user", "session", "hel").await;
+        append_active_assistant_text(&active_turns, "user", "session", "lo").await;
+
+        let snapshot = active_turn_snapshot(&active_turns, "user", "session")
+            .await
+            .expect("active turn should expose a snapshot");
+
+        assert_eq!(
+            snapshot.messages,
+            vec![ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "hello".to_string(),
+            }])]
+        );
+
+        finish_turn(&active_turns, "user", "session").await;
+        assert!(active_turn_snapshot(&active_turns, "user", "session")
+            .await
+            .is_none());
     }
 }

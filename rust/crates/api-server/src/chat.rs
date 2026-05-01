@@ -11,8 +11,13 @@ use tokio_stream::StreamExt;
 
 use crate::auth::AuthUser;
 use crate::runtime_bridge::{WebApiClient, WebPermissionPrompter, WebToolExecutor};
-use crate::state::AppState;
-use runtime::{ConversationRuntime, PermissionPolicy, PermissionPromptDecision, Session};
+use crate::state::{
+    active_turn_snapshot, finish_turn, try_start_turn, ActiveTurnSnapshot, ActiveTurns, AppState,
+};
+use runtime::{
+    ContentBlock, ConversationMessage, ConversationRuntime, MessageRole, PermissionPolicy,
+    PermissionPromptDecision, Session,
+};
 use tools::GlobalToolRegistry;
 
 fn build_web_permission_policy(permission_mode: runtime::PermissionMode) -> PermissionPolicy {
@@ -30,12 +35,150 @@ fn build_web_permission_policy(permission_mode: runtime::PermissionMode) -> Perm
     }
 }
 
+fn user_text_content(message: &ConversationMessage) -> Option<String> {
+    if message.role != MessageRole::User {
+        return None;
+    }
+
+    let mut text = String::new();
+    for block in &message.blocks {
+        match block {
+            ContentBlock::Text { text: block_text } => text.push_str(block_text),
+            _ => return None,
+        }
+    }
+    Some(text)
+}
+
+fn remove_pending_user_prompt(session: &mut Session, input: &str) -> bool {
+    let Some(last_message) = session.messages.last() else {
+        return false;
+    };
+
+    if user_text_content(last_message).as_deref() != Some(input) {
+        return false;
+    }
+
+    session.messages.pop();
+    true
+}
+
+fn message_to_json_value(message: &ConversationMessage) -> Option<serde_json::Value> {
+    serde_json::from_str(&message.to_json().render()).ok()
+}
+
+fn message_role(value: &serde_json::Value) -> Option<&str> {
+    value
+        .as_object()
+        .and_then(|object| object.get("role"))
+        .and_then(serde_json::Value::as_str)
+}
+
+fn overlay_active_turn_snapshot(
+    mut session_json: serde_json::Value,
+    snapshot: Option<ActiveTurnSnapshot>,
+) -> serde_json::Value {
+    let Some(snapshot) = snapshot else {
+        return session_json;
+    };
+    let Some(object) = session_json.as_object_mut() else {
+        return session_json;
+    };
+
+    object.insert("active_turn".to_string(), serde_json::Value::Bool(true));
+
+    let Some(messages) = object
+        .entry("messages")
+        .or_insert_with(|| serde_json::json!([]))
+        .as_array_mut()
+    else {
+        return session_json;
+    };
+
+    if message_role(messages.last().unwrap_or(&serde_json::Value::Null)) != Some("user") {
+        return session_json;
+    }
+
+    for message in snapshot.messages {
+        let Some(message_json) = message_to_json_value(&message) else {
+            continue;
+        };
+        if messages.last() != Some(&message_json) {
+            messages.push(message_json);
+        }
+    }
+
+    session_json
+}
+
+struct ActiveTurnGuard {
+    active_turns: ActiveTurns,
+    user_id: String,
+    session_id: String,
+    finished: bool,
+}
+
+impl ActiveTurnGuard {
+    fn new(active_turns: ActiveTurns, user_id: String, session_id: String) -> Self {
+        Self {
+            active_turns,
+            user_id,
+            session_id,
+            finished: false,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.finished = true;
+    }
+}
+
+impl Drop for ActiveTurnGuard {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.block_on(async {
+                finish_turn(&self.active_turns, &self.user_id, &self.session_id).await;
+            }),
+            Err(error) => {
+                tracing::error!(
+                    "Failed to release active turn for session {}: {}",
+                    self.session_id,
+                    error
+                );
+            }
+        }
+    }
+}
+
 pub async fn chat_completions(
     user: AuthUser,
     State(state): State<AppState>,
     Json(payload): Json<ChatRequest>, // 我们需要接收 frontend 传来的 session_id
 ) -> Sse<impl futures::stream::Stream<Item = Result<Event, Infallible>>> {
     let (tx, rx) = mpsc::channel::<Event>(100);
+
+    let session_id = payload
+        .session_id
+        .clone()
+        .unwrap_or_else(|| Session::new().session_id);
+    let user_id = user.user_id.clone();
+
+    if !try_start_turn(&state.active_turns, &user_id, &session_id).await {
+        let _ = tx
+            .send(
+                Event::default()
+                    .event("runtime_error")
+                    .data("当前会话已有一轮对话正在处理中，请等待上一轮结束后再发送。"),
+            )
+            .await;
+        let _ = tx.send(Event::default().event("done").data("[DONE]")).await;
+        let stream = ReceiverStream::new(rx).map(Ok);
+        return Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new());
+    }
 
     let qwen_client = state.qwen_client.clone();
     let tx_clone = tx.clone();
@@ -45,20 +188,21 @@ pub async fn chat_completions(
     let db = state.db.clone();
     let sandbox_client = state.sandbox_client.clone();
     let sandbox_sessions = state.sandbox_sessions.clone();
-    let user_id = user.user_id.clone();
+    let active_turns = state.active_turns.clone();
 
     // 在 spawn_blocking 中运行，因为 run_turn 会大量发生线程阻塞（调用 tokio::block_in_place）
     tokio::task::spawn_blocking(move || {
+        let mut active_turn_guard =
+            ActiveTurnGuard::new(active_turns.clone(), user_id.clone(), session_id.clone());
         let api_client = WebApiClient {
             client: qwen_client,
             tx: tx_clone,
+            active_turns: active_turns.clone(),
+            user_id: user_id.clone(),
+            session_id: session_id.clone(),
         };
         // 从数据库加载历史 Session，或者新建
         let mut session = Session::new();
-        let session_id = payload
-            .session_id
-            .clone()
-            .unwrap_or_else(|| session.session_id.clone());
         session.session_id = session_id.clone();
 
         // 根据前端传递的 permission_mode 动态构建权限策略
@@ -74,6 +218,7 @@ pub async fn chat_completions(
             session_id.clone(),
             sandbox_client,
             sandbox_sessions,
+            active_turns.clone(),
             permission_mode,
         );
         let mut prompter = WebPermissionPrompter {
@@ -130,35 +275,39 @@ pub async fn chat_completions(
 
         // 如果用户有输入，则执行一回合
         if let Some(input) = payload.input {
-            // --- 预保存用户输入，防止后台执行卡死导致刷新后丢失 ---
-            if let Err(e) = runtime.session_mut().push_user_text(&input) {
-                eprintln!("Failed to push user text: {}", e);
-            }
-            let pre_state = if let Ok(json_val) = runtime.session().to_json() {
-                json_val.render()
-            } else {
-                String::new()
-            };
-            let title = payload
-                .title
-                .clone()
-                .unwrap_or_else(|| "新的会话".to_string());
+            let had_pending_user_prompt = remove_pending_user_prompt(runtime.session_mut(), &input);
+            if !had_pending_user_prompt {
+                // --- 预保存用户输入，防止后台执行卡死导致刷新后丢失 ---
+                if let Err(e) = runtime.session_mut().push_user_text(&input) {
+                    eprintln!("Failed to push user text: {}", e);
+                }
+                let pre_state = if let Ok(json_val) = runtime.session().to_json() {
+                    json_val.render()
+                } else {
+                    String::new()
+                };
+                let title = payload
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "新的会话".to_string());
 
-            tokio::runtime::Handle::current().block_on(async {
-                let _ = sqlx::query(
-                    r#"INSERT INTO sessions (id, user_id, title, state)
+                tokio::runtime::Handle::current().block_on(async {
+                    let _ = sqlx::query(
+                        r#"INSERT INTO sessions (id, user_id, title, state)
                        VALUES (?, ?, ?, ?)
                        ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP"#
-                )
-                .bind(&session_id)
-                .bind(&user_id)
-                .bind(&title)
-                .bind(&pre_state)
-                .execute(&db).await;
-            });
-            // 因为 run_turn 内部会再 push 一次用户输入，我们先将其弹出来，保持一致
-            runtime.session_mut().messages.pop();
-            // -----------------------------------------------------
+                    )
+                    .bind(&session_id)
+                    .bind(&user_id)
+                    .bind(&title)
+                    .bind(&pre_state)
+                    .execute(&db)
+                    .await;
+                });
+                // 因为 run_turn 内部会再 push 一次用户输入，我们先将其弹出来，保持一致
+                runtime.session_mut().messages.pop();
+                // -----------------------------------------------------
+            }
 
             let turn_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 runtime.run_turn(input, Some(&mut prompter))
@@ -202,7 +351,9 @@ pub async fn chat_completions(
             .execute(&db).await;
 
             let _ = tx.send(Event::default().event("done").data("[DONE]")).await;
+            finish_turn(&active_turns, &user_id, &session_id).await;
         });
+        active_turn_guard.disarm();
     });
 
     let stream = ReceiverStream::new(rx).map(Ok);
@@ -290,7 +441,8 @@ pub async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
-    let row = if let Some(u) = user {
+    let user_id = user.as_ref().map(|user| user.user_id.clone());
+    let row = if let Some(u) = user.as_ref() {
         sqlx::query("SELECT state FROM sessions WHERE id = ? AND user_id = ?")
             .bind(&id)
             .bind(&u.user_id)
@@ -308,7 +460,12 @@ pub async fn get_session(
     if let Some(record) = row {
         let state_str: String = sqlx::Row::get(&record, "state");
         let json_val = serde_json::from_str(&state_str).unwrap_or(serde_json::json!({}));
-        Ok(Json(json_val))
+        let snapshot = if let Some(user_id) = user_id {
+            active_turn_snapshot(&state.active_turns, &user_id, &id).await
+        } else {
+            None
+        };
+        Ok(Json(overlay_active_turn_snapshot(json_val, snapshot)))
     } else {
         Err(axum::http::StatusCode::NOT_FOUND)
     }
@@ -338,8 +495,11 @@ pub async fn delete_session(
 
 #[cfg(test)]
 mod tests {
-    use super::build_web_permission_policy;
-    use runtime::PermissionMode;
+    use super::{
+        build_web_permission_policy, overlay_active_turn_snapshot, remove_pending_user_prompt,
+    };
+    use crate::state::ActiveTurnSnapshot;
+    use runtime::{ContentBlock, ConversationMessage, PermissionMode, Session};
 
     #[test]
     fn web_permission_policy_uses_tool_registry_requirements() {
@@ -365,5 +525,55 @@ mod tests {
             policy.required_mode_for("TodoWrite"),
             PermissionMode::WorkspaceWrite
         );
+    }
+
+    #[test]
+    fn removes_matching_pending_user_prompt_before_retry() {
+        let mut session = Session::new();
+        session
+            .push_user_text("repeat me")
+            .expect("user prompt should be recorded");
+
+        assert!(remove_pending_user_prompt(&mut session, "repeat me"));
+        assert!(session.messages.is_empty());
+    }
+
+    #[test]
+    fn does_not_remove_answered_same_text_prompt() {
+        let mut session = Session::new();
+        session
+            .push_user_text("repeat me")
+            .expect("user prompt should be recorded");
+        session
+            .push_message(ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "answered".to_string(),
+            }]))
+            .expect("assistant response should be recorded");
+
+        assert!(!remove_pending_user_prompt(&mut session, "repeat me"));
+        assert_eq!(session.messages.len(), 2);
+    }
+
+    #[test]
+    fn active_turn_overlay_preserves_streamed_assistant_response_on_refresh() {
+        let mut session = Session::new();
+        session
+            .push_user_text("work")
+            .expect("user prompt should be recorded");
+        let json = serde_json::from_str(&session.to_json().unwrap().render())
+            .expect("session JSON should parse");
+        let snapshot = ActiveTurnSnapshot {
+            messages: vec![ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "partial".to_string(),
+            }])],
+        };
+
+        let rendered = overlay_active_turn_snapshot(json, Some(snapshot));
+        let messages = rendered["messages"].as_array().unwrap();
+
+        assert_eq!(rendered["active_turn"], true);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[1]["blocks"][0]["text"], "partial");
     }
 }

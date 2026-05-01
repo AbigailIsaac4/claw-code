@@ -1,10 +1,6 @@
 import React, { useRef } from 'react';
-import { Button, Input, Segmented, Popover, Typography } from 'antd';
 import { SendOutlined, PaperClipOutlined, RobotOutlined, BulbOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { ActionIcon } from '@lobehub/ui';
-
-const { TextArea } = Input;
-const { Text } = Typography;
+import { ActionIcon, Button, Popover, Segmented, Text, TextArea } from '@lobehub/ui';
 
 interface SkillInfo {
   name: string;
@@ -38,6 +34,9 @@ export const ChatInputBox: React.FC<Props> = ({
            <Popover 
               content={
                 <div style={{ maxHeight: 300, overflowY: 'auto', width: 280 }}>
+                  <Text type="secondary" style={{ display: 'block', fontSize: 13, marginBottom: 8 }}>
+                    选择技能添加到输入框
+                  </Text>
                   {skills.length === 0 ? (
                     <div style={{ padding: 12, textAlign: 'center' }}><Text type="secondary">暂无可用技能</Text></div>
                   ) : (
@@ -56,7 +55,6 @@ export const ChatInputBox: React.FC<Props> = ({
                   )}
                 </div>
               } 
-              title={<span style={{ fontSize: 13, color: '#888' }}>选择技能添加到输入框</span>} 
               trigger="click"
               placement="topLeft"
             >
@@ -102,7 +100,7 @@ export const ChatInputBox: React.FC<Props> = ({
         <div style={{ position: 'absolute', bottom: 12, right: 16 }}>
            <Button
              type="primary"
-             icon={agentMode === 'plan' ? <BulbOutlined /> : <SendOutlined />}
+             icon={agentMode === 'plan' ? BulbOutlined : SendOutlined}
              onClick={onSend}
              loading={loading}
              style={{ 
