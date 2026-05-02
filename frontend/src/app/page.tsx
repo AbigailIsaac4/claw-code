@@ -754,6 +754,7 @@ export default function ChatPage() {
               );
             })}
           </div>
+        </div>
         <div style={{ padding: '16px' }}>
           <Button type="text" size="small" icon={<QuestionCircleOutlined />} style={{ color: '#888' }} onClick={() => setShowSettings(true)} />
         </div>
