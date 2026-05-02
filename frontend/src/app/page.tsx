@@ -5,7 +5,7 @@ import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event
 import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp } from 'antd';
 import { Markdown, DraggablePanel, SideNav, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
-import { PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, ShareAltOutlined, CopyOutlined } from '@ant-design/icons';
+import { PlusOutlined, MessageOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, BulbOutlined, ShareAltOutlined, CopyOutlined, PlusSquareOutlined, SearchOutlined, WifiOutlined, CaretRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, EllipsisOutlined, FileTextOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -672,39 +672,33 @@ export default function ChatPage() {
         </div>
       </Modal>
 
-      {/* 1. Global SideNav */}
-      <SideNav
-        avatar={<Avatar size={40} style={{ background: '#1677ff', color: '#fff' }}>U</Avatar>}
-        topActions={
-          <>
-            <ActionIcon icon={MessageOutlined} title="会话" active />
-          </>
-        }
-        bottomActions={
-          <>
-            <ActionIcon icon={PlusOutlined} title="新会话" onClick={createNewSession} />
-            <ActionIcon icon={RobotOutlined} title="技能库中心" onClick={() => setShowSkillsModal(true)} />
-            <ActionIcon icon={SettingOutlined} title="系统设置" onClick={() => setShowSettings(true)} />
-            <ActionIcon icon={UserOutlined} title="退出" onClick={handleLogout} />
-          </>
-        }
-        style={{ borderRight: '1px solid rgba(0,0,0,0.06)', zIndex: 100 }}
-      />
 
-      {/* 2. Session List Panel */}
+
+      {/* 1 & 2. Unified Left Sidebar */}
       <DraggablePanel
         placement="left"
         minWidth={200}
         maxWidth={400}
-        defaultSize={{ width: 280 }}
+        defaultSize={{ width: 260 }}
         expandable
-        style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column' }}
+        style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(0,0,0,0.06)' }}
       >
-        <div style={{ padding: '20px 16px 8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <Typography.Title level={4} style={{ margin: 0 }}>会话列表</Typography.Title>
-            <Button type="dashed" icon={<PlusOutlined />} size="small" onClick={createNewSession}>新建</Button>
-          </div>
+        <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Space>
+            <Avatar size={28} style={{ background: '#1677ff', color: '#fff' }}>C</Avatar>
+            <Text strong style={{ fontSize: 16 }}>Claw Agent</Text>
+          </Space>
+          <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} />
+        </div>
+
+        <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+          <Button type="text" block style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, height: 40, background: 'rgba(0,0,0,0.04)' }} onClick={createNewSession}>
+            <PlusSquareOutlined style={{ opacity: 0.6 }} /> 开启新话题
+          </Button>
+        </div>
+
+        <div style={{ padding: '8px 16px' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>历史话题</Text>
         </div>
         
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -736,8 +730,7 @@ export default function ChatPage() {
                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
                 >
                   <Space style={{ overflow: 'hidden', flex: 1 }}>
-                    <MessageOutlined style={{ color: isActive ? '#000' : '#888' }} />
-                    <Text ellipsis style={{ width: 140, color: isActive ? '#000' : 'inherit', fontWeight: isActive ? 600 : 400 }}>
+                    <Text ellipsis style={{ width: 140, color: isActive ? '#000' : '#666', fontWeight: isActive ? 600 : 400 }}>
                       {item.title}
                     </Text>
                   </Space>
@@ -761,6 +754,8 @@ export default function ChatPage() {
               );
             })}
           </div>
+        <div style={{ padding: '16px' }}>
+          <Button type="text" size="small" icon={<QuestionCircleOutlined />} style={{ color: '#888' }} onClick={() => setShowSettings(true)} />
         </div>
       </DraggablePanel>
 
@@ -769,13 +764,9 @@ export default function ChatPage() {
         {/* Header */}
         <Header 
           logo={
-            <div style={{ display: 'flex', alignItems: 'baseline', whiteSpace: 'nowrap', gap: 16 }}>
-              <Text strong style={{ fontSize: 16 }}>{activeSession?.title}</Text>
-              {activeSession && activeSession.messages.length > 0 && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {activeSession.messages.length} 条消息
-                </Text>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text strong style={{ fontSize: 16 }}>{activeSession?.title || '你好'}</Text>
+              <Button type="text" size="small" icon={<EllipsisOutlined />} style={{ opacity: 0.4 }} />
             </div>
           }
           actions={
@@ -959,15 +950,15 @@ export default function ChatPage() {
         expandable
         style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column' }}
       >
-        <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(0,0,0,0.04)', background: 'transparent' }}>
-          <Typography.Title level={5} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <BulbOutlined style={{ color: '#faad14' }} /> 当前计划 (Todos)
-          </Typography.Title>
+        <div style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text strong style={{ fontSize: 16 }}>空间</Text>
+          <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} />
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
           {todos.length === 0 ? (
-            <div style={{ textAlign: 'center', marginTop: 40 }}>
-              <Text type="secondary" style={{ fontSize: 13 }}>暂无计划，你可以让 Agent 帮你生成执行计划。</Text>
+            <div style={{ textAlign: 'center', marginTop: 100, padding: '0 24px' }}>
+              <FileTextOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }} />
+              <Text type="secondary" style={{ fontSize: 13, display: 'block', lineHeight: 1.6 }}>暂无文档。与此智能体关联的文档将显示在这里。</Text>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

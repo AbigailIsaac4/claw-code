@@ -90,9 +90,7 @@ export const ChatInputBox: React.FC<Props> = ({
               onSend();
             }
           }}
-          placeholder={agentMode === 'plan' 
-            ? '描述你的任务目标，Agent 将分析并生成执行计划（不会执行任何修改）...' 
-            : '输入指令，可随时拖入文件上传 (Shift + Enter 换行)...'}
+          placeholder="从任何想法开始... 按 Ctrl Enter 换行..."
           autoSize={{ minRows: 3, maxRows: 10 }}
           style={{ padding: '16px 16px 48px', border: 'none', background: 'transparent', boxShadow: 'none', resize: 'none', fontSize: 14 }}
         />
