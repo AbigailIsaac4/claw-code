@@ -138,7 +138,11 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+      // Only auto-scroll if we are near the bottom (within 150px)
+      if (scrollHeight - scrollTop - clientHeight < 150) {
+        scrollRef.current.scrollTop = scrollHeight;
+      }
     }
   }, [activeSession?.messages]);
 
@@ -522,17 +526,23 @@ export default function ChatPage() {
             return;
           }
           if (ev.event === 'message') {
-            setSessions(prev => prev.map(s => {
-              if (s.id === sessionId) {
-                const nextMsgs = withAssistantTail(s.messages);
-                nextMsgs[nextMsgs.length - 1] = { 
-                  ...nextMsgs[nextMsgs.length - 1], 
-                  content: nextMsgs[nextMsgs.length - 1].content + ev.data 
-                };
-                return { ...s, messages: nextMsgs };
-              }
-              return s;
-            }));
+            try {
+              const data = JSON.parse(ev.data);
+              const chunkText = data.choices?.[0]?.delta?.content || '';
+              setSessions(prev => prev.map(s => {
+                if (s.id === sessionId) {
+                  const nextMsgs = withAssistantTail(s.messages);
+                  nextMsgs[nextMsgs.length - 1] = { 
+                    ...nextMsgs[nextMsgs.length - 1], 
+                    content: nextMsgs[nextMsgs.length - 1].content + chunkText 
+                  };
+                  return { ...s, messages: nextMsgs };
+                }
+                return s;
+              }));
+            } catch(e) {
+              console.warn('Failed to parse message chunk:', e);
+            }
           } else if (ev.event === 'tool_call_start') {
             try {
               const data = JSON.parse(ev.data);
@@ -685,8 +695,9 @@ export default function ChatPage() {
         expand={leftExpand}
         onExpandChange={setLeftExpand}
         expandable
-        style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(0,0,0,0.06)' }}
+        style={{ background: '#f8f9fa', borderRight: '1px solid rgba(0,0,0,0.06)' }}
       >
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Space>
             <Avatar size={28} style={{ background: '#1677ff', color: '#fff' }}>C</Avatar>
@@ -761,6 +772,7 @@ export default function ChatPage() {
         </div>
         <div style={{ padding: '16px' }}>
           <Button type="text" size="small" icon={<QuestionCircleOutlined />} style={{ color: '#888' }} onClick={() => setShowSettings(true)} />
+        </div>
         </div>
       </DraggablePanel>
 
@@ -955,8 +967,9 @@ export default function ChatPage() {
         expand={rightExpand}
         onExpandChange={setRightExpand}
         expandable
-        style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column' }}
+        style={{ background: '#f8f9fa' }}
       >
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text strong style={{ fontSize: 16 }}>空间</Text>
           <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
@@ -993,6 +1006,7 @@ export default function ChatPage() {
               ))}
             </div>
           )}
+        </div>
         </div>
       </DraggablePanel>
 

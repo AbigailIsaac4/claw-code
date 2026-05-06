@@ -123,12 +123,19 @@ impl ApiClient for WebApiClient {
                                             &text,
                                         )
                                         .await;
+                                        let sse_data = serde_json::to_string(&serde_json::json!({
+                                            "choices": [{
+                                                "delta": {
+                                                    "content": text
+                                                }
+                                            }]
+                                        })).unwrap_or_default();
                                         let _ = self
                                             .tx
                                             .send(
                                                 Event::default()
                                                     .event("message")
-                                                    .data(text.clone()),
+                                                    .data(sse_data),
                                             )
                                             .await;
                                         events.push(AssistantEvent::TextDelta(text));
@@ -188,9 +195,16 @@ impl ApiClient for WebApiClient {
                                     &text,
                                 )
                                 .await;
+                                let sse_data = serde_json::to_string(&serde_json::json!({
+                                    "choices": [{
+                                        "delta": {
+                                            "content": text
+                                        }
+                                    }]
+                                })).unwrap_or_default();
                                 let _ = self
                                     .tx
-                                    .send(Event::default().event("message").data(text.clone()))
+                                    .send(Event::default().event("message").data(sse_data))
                                     .await;
                                 events.push(AssistantEvent::TextDelta(text));
                             }

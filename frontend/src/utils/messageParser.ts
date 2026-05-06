@@ -34,8 +34,8 @@ export function parseMessageContent(rawContent: string): ParsedMessage {
     workspaceFiles.add(match[1]);
   }
 
-  // 3. 将 /workspace/ 路径转换为 markdown 链接格式 (为了兜底显示)
-  const cleanContent = text.replace(/(^|[^\w"'/\]])(\/workspace\/[a-zA-Z0-9_.\-/]+)/g, '$1[$2]($2)');
+  // 3. (Remvoed) no longer converting /workspace/ to markdown links, to avoid 404 on click.
+  const cleanContent = text;
 
   // 4. 提取 Plan 步骤
   const planSteps: PlanStep[] = [];
