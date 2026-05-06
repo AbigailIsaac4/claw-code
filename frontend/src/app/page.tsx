@@ -94,6 +94,8 @@ export default function ChatPage() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillSearch, setSkillSearch] = useState('');
+  const [leftExpand, setLeftExpand] = useState(true);
+  const [rightExpand, setRightExpand] = useState(true);
 
   const loadSkills = async () => {
     setSkillsLoading(true);
@@ -680,6 +682,8 @@ export default function ChatPage() {
         minWidth={200}
         maxWidth={400}
         defaultSize={{ width: 260 }}
+        expand={leftExpand}
+        onExpandChange={setLeftExpand}
         expandable
         style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(0,0,0,0.06)' }}
       >
@@ -688,7 +692,7 @@ export default function ChatPage() {
             <Avatar size={28} style={{ background: '#1677ff', color: '#fff' }}>C</Avatar>
             <Text strong style={{ fontSize: 16 }}>Claw Agent</Text>
           </Space>
-          <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} />
+          <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setLeftExpand(false)} />
         </div>
 
         <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
@@ -765,7 +769,7 @@ export default function ChatPage() {
         {/* Header */}
         <Header 
           logo={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
               <Text strong style={{ fontSize: 16 }}>{activeSession?.title || '你好'}</Text>
               <Button type="text" size="small" icon={<EllipsisOutlined />} style={{ opacity: 0.4 }} />
             </div>
@@ -806,9 +810,9 @@ export default function ChatPage() {
                     id: msg.id,
                     role: msg.role === 'user' ? 'user' : 'assistant',
                     content: msg.content || ' ',
-                    createAt: 0, // Avoid hydration mismatch
                     meta: msg.role === 'user' ? {
                       title: '',
+                      avatar: <></>,
                     } : {
                       avatar: '✦',
                       title: 'Agent',
@@ -948,12 +952,14 @@ export default function ChatPage() {
         minWidth={200}
         maxWidth={400}
         defaultSize={{ width: 280 }}
+        expand={rightExpand}
+        onExpandChange={setRightExpand}
         expandable
         style={{ background: '#f8f9fa', display: 'flex', flexDirection: 'column' }}
       >
         <div style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text strong style={{ fontSize: 16 }}>空间</Text>
-          <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} />
+          <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
           {todos.length === 0 ? (
