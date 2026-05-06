@@ -1,6 +1,9 @@
 import React, { useRef } from 'react';
-import { SendOutlined, PaperClipOutlined, RobotOutlined, BulbOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { ActionIcon, Button, Popover, Segmented, Text, TextArea } from '@lobehub/ui';
+import { SendOutlined, PaperClipOutlined, RobotOutlined, AppstoreOutlined, CloudOutlined } from '@ant-design/icons';
+import { Button, Popover, Typography, Input } from 'antd';
+
+const { Text } = Typography;
+const { TextArea } = Input;
 
 interface SkillInfo {
   name: string;
@@ -19,20 +22,49 @@ interface Props {
 }
 
 export const ChatInputBox: React.FC<Props> = ({
-  input, setInput, loading, onSend, agentMode, setAgentMode, onFileUpload, skills
+  input, setInput, loading, onSend, onFileUpload, skills
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEmpty = !input.trim();
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', background: '#fff', borderRadius: 16, border: '1px solid rgba(0,0,0,0.06)', boxShadow: '0 8px 24px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      
-      {/* Top Action Bar (LobeUI style) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid rgba(0,0,0,0.04)', background: '#fafafa' }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-           <ActionIcon icon={PaperClipOutlined} title="上传文件作为上下文" onClick={() => fileInputRef.current?.click()} size="small" />
-           
-           <Popover 
-              content={
+    <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ 
+        background: '#fff', 
+        borderRadius: 12, 
+        border: '1px solid #e8e8e8', 
+        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+        display: 'flex', 
+        flexDirection: 'column', 
+        overflow: 'hidden',
+        padding: '12px'
+      }}>
+        <TextArea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onPressEnter={(e) => {
+            if (!e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          placeholder="从任何想法开始... 按 Ctrl Enter 换行..."
+          autoSize={{ minRows: 2, maxRows: 8 }}
+          bordered={false}
+          style={{ padding: 0, resize: 'none', fontSize: 14, boxShadow: 'none' }}
+        />
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 12, color: '#888' }}>
+            <PaperClipOutlined 
+               style={{ fontSize: 18, cursor: 'pointer', transition: 'color 0.2s' }} 
+               title="上传文件作为上下文" 
+               onClick={() => fileInputRef.current?.click()} 
+               onMouseEnter={e => e.currentTarget.style.color = '#333'}
+               onMouseLeave={e => e.currentTarget.style.color = '#888'}
+            />
+            <Popover 
+               content={
                 <div style={{ maxHeight: 300, overflowY: 'auto', width: 280 }}>
                   <Text type="secondary" style={{ display: 'block', fontSize: 13, marginBottom: 8 }}>
                     选择技能添加到输入框
@@ -48,74 +80,42 @@ export const ChatInputBox: React.FC<Props> = ({
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         onClick={() => setInput(prev => prev + (prev.trim() ? '\n' : '') + `请使用 ${item.name} 技能: `)}
                       >
-                        <div style={{ fontWeight: 500, color: '#1677ff', marginBottom: 4, fontSize: 13 }}><RobotOutlined /> {item.name}</div>
+                        <div style={{ fontWeight: 500, color: '#eb6f4b', marginBottom: 4, fontSize: 13 }}><RobotOutlined /> {item.name}</div>
                         <div style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description}</div>
                       </div>
                     ))
                   )}
                 </div>
-              } 
-              trigger="click"
-              placement="topLeft"
-            >
-              <ActionIcon icon={RobotOutlined} title="唤出技能库" size="small" />
-            </Popover>
-            <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={onFileUpload} />
-        </div>
+               } 
+               trigger="click"
+               placement="topLeft"
+             >
+               <AppstoreOutlined 
+                 style={{ fontSize: 18, cursor: 'pointer', transition: 'color 0.2s' }} 
+                 title="唤出技能库" 
+                 onMouseEnter={e => e.currentTarget.style.color = '#333'}
+                 onMouseLeave={e => e.currentTarget.style.color = '#888'}
+               />
+             </Popover>
+             <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={onFileUpload} />
+          </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-             {agentMode === 'plan' ? '📝 生成计划' : '⚡ 立即执行'}
-          </Text>
-          <Segmented
-            size="small"
-            value={agentMode}
-            onChange={(val) => setAgentMode(val as 'plan' | 'execute')}
-            options={[
-              { label: <span><BulbOutlined /> Plan</span>, value: 'plan' },
-              { label: <span><ThunderboltOutlined /> Execute</span>, value: 'execute' },
-            ]}
+          <Button
+            type="primary"
+            shape="circle"
+            icon={<SendOutlined />}
+            onClick={onSend}
+            disabled={isEmpty || loading}
+            style={{ 
+              background: isEmpty ? '#f0f0f0' : '#eb6f4b', 
+              color: isEmpty ? '#bfbfbf' : '#fff',
+              border: 'none', 
+            }}
           />
         </div>
       </div>
-
-      {/* Input Area */}
-      <div style={{ position: 'relative', background: agentMode === 'plan' ? '#fffbe6' : '#fff', transition: 'background 0.3s' }}>
-        <TextArea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onPressEnter={(e) => {
-            if (!e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
-          }}
-          placeholder="从任何想法开始... 按 Ctrl Enter 换行..."
-          autoSize={{ minRows: 3, maxRows: 10 }}
-          style={{ padding: '16px 16px 48px', border: 'none', background: 'transparent', boxShadow: 'none', resize: 'none', fontSize: 14 }}
-        />
-        
-        <div style={{ position: 'absolute', bottom: 12, right: 16 }}>
-           <Button
-             type="primary"
-             icon={agentMode === 'plan' ? BulbOutlined : SendOutlined}
-             onClick={onSend}
-             loading={loading}
-             style={{ 
-               background: agentMode === 'plan' ? '#faad14' : '#000', 
-               border: 'none', 
-               boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-               display: 'flex',
-               alignItems: 'center',
-               justifyContent: 'center',
-               padding: '0 20px',
-               height: 36,
-               borderRadius: 18
-             }}
-           >
-             {agentMode === 'plan' ? '生成计划' : '发送'}
-           </Button>
-        </div>
+      <div style={{ marginTop: 8, paddingLeft: 4, display: 'flex', alignItems: 'center', gap: 6, color: '#aaa', fontSize: 12 }}>
+        <CloudOutlined style={{ fontSize: 14 }} /> <span>云端沙箱</span>
       </div>
     </div>
   );

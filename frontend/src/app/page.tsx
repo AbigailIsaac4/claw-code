@@ -695,25 +695,25 @@ export default function ChatPage() {
         expand={leftExpand}
         onExpandChange={setLeftExpand}
         expandable
-        style={{ background: '#f8f9fa', borderRight: '1px solid rgba(0,0,0,0.06)' }}
+        style={{ background: '#f8f6f3', borderRight: '1px solid rgba(0,0,0,0.06)' }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Space>
-            <Avatar size={28} style={{ background: '#1677ff', color: '#fff' }}>C</Avatar>
-            <Text strong style={{ fontSize: 16 }}>Claw Agent</Text>
+            <Avatar shape="square" size={28} style={{ background: '#eb6f4b', color: '#fff', borderRadius: 8 }} icon={<RobotOutlined />} />
+            <Text strong style={{ fontSize: 16 }}>Agent 平台</Text>
           </Space>
           <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setLeftExpand(false)} />
         </div>
 
         <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
-          <Button type="text" block style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, height: 40, background: 'rgba(0,0,0,0.04)' }} onClick={createNewSession}>
-            <PlusSquareOutlined style={{ opacity: 0.6 }} /> 开启新话题
+          <Button block style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, height: 40, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 12 }} onClick={createNewSession}>
+            <PlusOutlined style={{ opacity: 0.6 }} /> 开启新话题
           </Button>
         </div>
 
         <div style={{ padding: '8px 16px' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>历史话题</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>历史对话</Text>
         </div>
         
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -730,12 +730,11 @@ export default function ChatPage() {
                     }
                   }}
                   style={{
-                    padding: '12px 16px',
-                    margin: '6px 12px',
-                    borderRadius: 12,
+                    padding: '8px 12px',
+                    margin: '2px 12px',
+                    borderRadius: 8,
                     cursor: 'pointer',
-                    background: isActive ? '#fff' : 'transparent',
-                    boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.04)' : 'none',
+                    background: isActive ? 'rgba(0,0,0,0.03)' : 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -745,6 +744,7 @@ export default function ChatPage() {
                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
                 >
                   <Space style={{ overflow: 'hidden', flex: 1 }}>
+                    <Text type="secondary" style={{ color: isActive ? '#eb6f4b' : '#aaa' }}>#</Text>
                     <Text ellipsis style={{ width: 140, color: isActive ? '#000' : '#666', fontWeight: isActive ? 600 : 400 }}>
                       {item.title}
                     </Text>
@@ -783,7 +783,6 @@ export default function ChatPage() {
           logo={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
               <Text strong style={{ fontSize: 16 }}>{activeSession?.title || '你好'}</Text>
-              <Button type="text" size="small" icon={<EllipsisOutlined />} style={{ opacity: 0.4 }} />
             </div>
           }
           actions={
@@ -826,9 +825,9 @@ export default function ChatPage() {
                       title: '',
                       avatar: <></>,
                     } : {
-                      avatar: '✦',
-                      title: 'Agent',
-                      backgroundColor: '#f0f5ff',
+                      avatar: <RobotOutlined />,
+                      title: 'Agent 平台',
+                      backgroundColor: '#eb6f4b',
                     },
                     extra: {
                       toolCalls: msg.toolCalls,
@@ -967,18 +966,18 @@ export default function ChatPage() {
         expand={rightExpand}
         onExpandChange={setRightExpand}
         expandable
-        style={{ background: '#f8f9fa' }}
+        style={{ background: '#ffffff' }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text strong style={{ fontSize: 16 }}>空间</Text>
+          <Text strong style={{ fontSize: 16 }}>资源</Text>
           <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
           {todos.length === 0 ? (
             <div style={{ textAlign: 'center', marginTop: 100, padding: '0 24px' }}>
-              <FileTextOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }} />
-              <Text type="secondary" style={{ fontSize: 13, display: 'block', lineHeight: 1.6 }}>暂无文档。与此智能体关联的文档将显示在这里。</Text>
+              <FileTextOutlined style={{ fontSize: 48, color: '#f0f0f0', marginBottom: 16 }} />
+              <Text type="secondary" style={{ fontSize: 13, display: 'block', lineHeight: 1.6 }}>暂无文档。当前 agent 关联的文档将会<br/>显示在这里</Text>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

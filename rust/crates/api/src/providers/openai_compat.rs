@@ -510,7 +510,16 @@ impl StreamState {
                 }));
             }
 
-            for tool_call in choice.delta.tool_calls {
+            let mut tool_calls = choice.delta.tool_calls;
+            if let Some(function_call) = choice.delta.function_call {
+                tool_calls.push(DeltaToolCall {
+                    index: 0,
+                    id: Some("call_function_call".to_string()),
+                    function: function_call,
+                });
+            }
+
+            for tool_call in tool_calls {
                 let state = self.tool_calls.entry(tool_call.index).or_default();
                 state.apply(tool_call);
                 let block_index = state.block_index();
@@ -692,6 +701,8 @@ struct ChatMessage {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Vec<ResponseToolCall>,
+    #[serde(default)]
+    function_call: Option<ResponseToolFunction>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -738,6 +749,8 @@ struct ChunkDelta {
     content: Option<String>,
     #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
     tool_calls: Vec<DeltaToolCall>,
+    #[serde(default)]
+    function_call: Option<DeltaFunction>,
 }
 
 #[derive(Debug, Deserialize)]

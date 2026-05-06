@@ -17,7 +17,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <StyleProvider hashPriority="high">
-      <ThemeProvider themeMode="light" customTheme={{ primaryColor: 'blue' }}>
+      <ThemeProvider themeMode="light" customTheme={{ primaryColor: 'volcano' }}>
         <App>
           {children}
         </App>

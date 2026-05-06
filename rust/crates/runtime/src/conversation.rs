@@ -742,7 +742,9 @@ fn build_assistant_message(
         ));
     }
     if blocks.is_empty() {
-        return Err(RuntimeError::new("assistant stream produced no content"));
+        blocks.push(ContentBlock::Text {
+            text: "⚠️ The assistant returned an empty response. This may occur if the model is confused or context is too large. Please adjust your prompt.".to_string()
+        });
     }
 
     Ok((
