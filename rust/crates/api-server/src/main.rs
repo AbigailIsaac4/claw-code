@@ -57,9 +57,9 @@ async fn main() {
         .with_state(state);
 
     let port: u16 = std::env::var("PORT")
-        .unwrap_or_else(|_| "3000".to_string())
+        .unwrap_or_else(|_| "18008".to_string())
         .parse()
-        .unwrap_or(3000);
+        .unwrap_or(18008);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("Server listening on {}", addr);
 

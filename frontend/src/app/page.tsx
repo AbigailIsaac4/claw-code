@@ -37,7 +37,7 @@ const parseUploadedWorkspacePrompt = (content: string) => {
   const filesEnd = content.length - UPLOADED_WORKSPACE_SUFFIX.length;
   const files = content
     .slice(filesStart, filesEnd)
-    .split(/\s*[，,]\s*/)
+    .split(/\s*[,\uFF0C]\s*/)
     .map((item) => item.trim())
     .filter(Boolean);
 
@@ -107,7 +107,7 @@ export default function ChatPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
-  // Plan / Execute 婵犵數濮烽。钘壩ｉ崨鏉戝瀭妞ゅ繐鐗嗛悞鍨亜閹哄棗浜剧紒鍓ц檸閸樻儳鈽夐悽绋跨劦妞ゆ帒瀚埛鎴︽煕濞戞﹫宸ョ紒妤佸笚缁绘稓鎷犺閻ｉ亶鏌?
+  // Plan / Execute mode
   const [agentMode, setAgentMode] = useState<'plan' | 'execute'>('execute');
 
   // Settings & Plugins
@@ -266,7 +266,7 @@ export default function ChatPage() {
       }
       const data = await res.json();
       if (data && data.length > 0) {
-        // 闂傚倸鍊风粈渚€骞夐垾鎰佹綎缂備焦蓱閸欏繘鏌熼锝囦汗鐟滅増甯掗悙濠冦亜閹哄棗浜鹃柣搴㈣壘椤︾敻寮诲鍫闂佸憡鎸鹃崰搴敋閿濆鏁嗗〒姘功閻绻涙潏鍓хК婵炲拑缍侀幃浼村Ψ閳哄倻鍘介梺缁樏鑸靛緞閸曨厾纾奸悹鍥у级椤ャ垺銇勯姀陇澹橀柍钘夘樀婵偓闁绘鏁搁弳?        loadSessionDetail(data[0].id, authToken, data);
+        loadSessionDetail(data[0].id, authToken, data);
       } else {
         createNewSession();
       }
@@ -282,7 +282,7 @@ export default function ChatPage() {
       });
       if (res.ok) {
         const state = await res.json();
-        // 闂傚倷娴囧畷鐢稿窗閹扮増鍋￠弶鍫氭櫅缁躲倕螖閿濆懎鏆為柛濠囨涧闇夐柣妯烘▕閸庡繘鎮峰▎娆戠暤妤犵偞鐗楀蹇涘礈瑜忔牎濠电偛顕崢褔宕愰崸妤€钃?state.messages闂傚倸鍊烽悞锔锯偓绗涘懐鐭欓柟杈鹃檮閸ゆ劖銇勯弽顐沪闁稿骸绉归弻鏇＄疀婵犲倸鈷夋繛瀛樺殠閸婃繈寮婚敐澶婄疀妞ゆ棁濮ゅВ鍕⒑鏉炴壆绐旂紒鐘崇墵瀵?assistant/tool 闂傚倸鍊烽懗鍫曪綖鐎ｎ喖绀嬮柛顭戝亞閺嗐儵姊绘担绛嬪殐闁哥姵鐗犻弻濠囨晲婢跺浠掑銈嗘磵閸嬫挾鈧鍠栭悘姘跺箯閸涙潙绀冩い蹇撶У鏁堝┑鐘垫暩閸嬬偤宕归崼鏇炵闁圭虎鍠栫壕濠氭煙閻愵剚鐏辨俊?assistant bubble
+        // Hydrate session messages into UI-friendly messages and tool calls.
         const messages: Message[] = [];
         let currentAssistant: Message | null = null;
         let sessionTodos: Todo[] = [];
@@ -390,7 +390,7 @@ export default function ChatPage() {
 
       if (isShared && sharedSessionId) {
         setShowLogin(false);
-        // 闂傚倸鍊烽懗鍫曞磿閻㈢鐤炬繛鎴欏灪閸嬨倝鏌曟繛褍瀚▓浼存⒑閸︻叀妾搁柛鐘崇墱缁牆鐣濋崟顒傚幈濡炪値鍘介崹鐢稿几閻斿吋鐓曞┑鐘插暙閳绘洟鏌熼鑲╃Ш鐎规洖鐖奸、妤佹媴鐟欏嫭顔忛梻鍌欑劍濡炴寧绂嶅┑鍥╃彾闁糕剝绋戠粻?session
+        // Shared link view uses a public session id without auth.
         void loadSessionDetail(sharedSessionId, '', []);
         return;
       }
@@ -431,7 +431,7 @@ export default function ChatPage() {
         localStorage.setItem('claw_token', data.token);
         setToken(data.token);
         setShowLogin(false);
-        message.success(`婵犵數濮烽弫鎼佸磻濞戞娑欐償閵娿儱鐎梺鍏肩ゴ閺呮粌鐣烽弻銉﹀€甸柨婵嗛閺嬫盯鏌ｉ幇顒婅含闁哄矉缍侀獮鍥敆閸屾稒鍠栭梻? ${data.full_name}`);
+        message.success(`Signed in as ${data.full_name}`);
         loadSessions(data.token);
       } else {
         message.error(data.message || 'Login failed. Check your credentials.');
@@ -670,6 +670,8 @@ export default function ChatPage() {
     } catch (err) {
       if (!streamCompleted) {
         console.error(err);
+        let errorMsg = err instanceof Error ? err.message : String(err);
+        message.error(`Request failed: ${errorMsg}. Is the API server running?`);
       }
       streamingSessionRef.current = null;
       setConversationLoading(false);
@@ -679,9 +681,9 @@ export default function ChatPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', backgroundColor: '#fff' }}>
       
-      {/* 闂傚倸鍊峰ù鍥儍椤愶箑骞㈤柍杞扮劍椤斿嫮绱撻崒姘偓鍝ョ矓鐎靛摜鐭撻柟缁㈠櫘閺佸鏌ㄥ┑鍡╂Ц闁圭鍩栭妵鍕箻鐠虹洅銏ゆ煟?*/}
+      {/* Login modal */}
       <Modal
-        title={<Typography.Title level={4} style={{ margin: 0, textAlign: 'center' }}>闂傚倸鍊峰ù鍥儍椤愶箑骞㈤柍杞扮劍椤斿嫮绱?Claw Agent</Typography.Title>}
+        title={<Typography.Title level={4} style={{ margin: 0, textAlign: 'center' }}>Welcome to Claw Agent</Typography.Title>}
         open={showLogin}
         closable={false}
         keyboard={false}
@@ -706,10 +708,11 @@ export default function ChatPage() {
             onPressEnter={handleLogin}
           />
           <Button type="primary" size="large" block loading={loginLoading} onClick={handleLogin}>
-            闂傚倷绀侀幖顐λ囬锕€鐤炬繝濠傛噽閻瑩鏌熸潏鍓х暠闁活厽顨婇弻娑㈠焺閸愵亗鈧帞鈧鎸风欢姘跺蓟濞戙垹绠涙い鎾跺仧缁佺兘姊?
+            Sign in
           </Button>
           <Text type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
-            婵? 闂傚倸鍊风粈渚€骞栭锔藉亱婵犲﹤鐗嗙粈鍫熺箾閸℃ɑ灏伴柣鎾卞灲閺屽秹宕崟顒€娅ｉ梺娲诲幗椤ㄥ懓鐏嬫俊顐︻暒濞村洭宕楀畝鍕厽妞ゆ挾鍋熼悞鍛婃叏婵犲偆鐓肩€规洜鍠栭、妤呭焵椤掍焦鍙忛柛顐熸噰閸嬫捇宕烽褏鍔稿┑鐐茬毞閳ь剚鍓氶崵鏇㈡煕椤愶絾绀€缂佲偓閸愨斂浜滈煫鍥ㄦ尰閸ｇ儤绻涢崼娑樼伈婵﹨娅ｉ幉鎾礋椤掆偓閸炲顪冮妶鍐ㄥ姕闁瑰憡鎮傞崺銏狀吋婢跺á銊╂煏婵犲繒瀵兼慨瑙勵殜濮婃椽宕崟顒€顦╅梺鐓庣秺缁犳牠宕洪姀锝囩杸婵炴垶鐟ч崢浠嬫⒑闂堟稓绠氶柡鍛箞瀹曘垹顭ㄩ崨顖滐紲闁哄鐗勯崝搴ｇ不閹剧粯鐓冪紓浣股戦ˉ鍫濃攽閳╁啯鍊愬┑锛勫厴婵＄兘鏁傞懞銉у竼闂傚倷娴囧畷鍨叏閺夋嚚娲Ω閳轰浇鎽曟繝銏ｆ硾椤戝洭銆呴悜鑺ョ厱妞ゆ劗濮撮悘鈺呮倵閸偆鍙€闁哄被鍊栭幈銊╁箛椤戣棄浜鹃柕鍫濐槸鐟欙箓鏌嶈閸撶喎顫忓ú顏呭殥闁靛牆鎳嶇划璺衡攽閳藉棗浜濇い銊ワ躬閻涱喗寰勯幇顒傤唴闂佽姤锚閿?          </Text>
+            Use your workspace account to continue.
+          </Text>
         </div>
       </Modal>
 
@@ -737,7 +740,7 @@ export default function ChatPage() {
 
         <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
           <Button block style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, height: 40, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 12 }} onClick={createNewSession}>
-            <PlusOutlined style={{ opacity: 0.6 }} /> 闂備浇顕х€涒晠顢欓弽顓炵獥闁圭儤顨呯壕濠氭煙閸撗呭笡闁绘挻娲橀幈銊ノ熼悡搴′粯闂佽楠忕换婵嬪蓟閿涘嫪娌柡鍌樺€曟慨娑㈡⒑瑜版帩妫戝┑顔芥尦閸╃偤骞嬮悩顐壕闁挎繂鎳愭禒娑欐叏?
+            <PlusOutlined style={{ opacity: 0.6 }} /> New Chat
           </Button>
         </div>
 
@@ -952,7 +955,7 @@ export default function ChatPage() {
                         <PlanStepsCard 
                           steps={parsed?.planSteps || []} 
                           onExecuteStep={(fullBlock) => {
-                            setInput(`闂傚倷娴囧畷鍨叏閺夋嚚娲敇閵忕姷鍝楅柡澶婄墑閸斿秴鈻嶉悩缁樼厽闁挎繂鎳忓﹢浼存煕鐎ｎ偓鑰块柟顔斤耿閹瑩鎮滃鍫㈠惞缂傚倷闄嶉崝宥咁熆濮椻偓閸┿儲寰勯幇顒傤啋闂佸綊顣︾粈渚€宕滈崡鐑嗘富闁靛牆妫楃粭褔鏌涚€ｎ剙浠遍柕鍡楀暣婵＄兘鍩℃担鍕撳洨鍙撻柛銉ｅ妽缁€鍫ユ煟濞戣鲸鐝渘${fullBlock}`);
+                            setInput(`Please execute the following step:\n\n${fullBlock}`);
                             setAgentMode('execute');
                           }} 
                         />
@@ -973,7 +976,7 @@ export default function ChatPage() {
             {loading && (
                <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 8 }}>
                   <LoadingDots size={4} variant="typing" />
-                  <LobeText type="secondary" italic>Agent 婵犵數濮甸鏍窗濡ゅ啯宕查柟閭﹀枛缁躲倝鏌﹀Ο渚闁肩増瀵ч妵鍕疀閹炬潙娅ｇ紓浣稿閸嬨倝寮诲☉銏犲嵆闁靛鍎辩粻娲⒑?..</LobeText>
+                  <LobeText type="secondary" italic>Agent is thinking...</LobeText>
                </div>
             )}
           </div>
@@ -1097,9 +1100,8 @@ export default function ChatPage() {
         width={700}
       >
         <div style={{ marginTop: 24 }}>
-          <Typography.Title level={5}>闂備浇顕уù鐑藉箠閹捐绠熼柨鐔哄У閸嬪倿鏌ㄩ悢鍝勑㈤柛灞诲姂閺屾洟宕煎┑鍥х獩缂佹儳澧介崑鎾诲Φ閸曨垰绫嶉柛灞剧煯婢规洟姊?MCP 闂傚倸鍊风粈渚€骞栭锔藉亱闁糕剝鐟ч惌鎾绘倵濞戞鎴﹀矗韫囨稒鐓熼柡鍐ㄥ€哥敮鍫曟⒒?(闂傚倸鍊风粈渚€骞夐敓鐘茬闁哄洢鍨圭粻鐘虫叏濡炶浜鹃悗瑙勬礃濞叉粓鍩€椤掑倹鏆╃痪顓炵埣瀹曟垿骞樼紒妯轰画闂備緡鍙忛梽鍕懅闂傚倷绀侀幉锟犳偡閵壯勫床婵せ鍋撻柣娑卞櫍楠炴鎷犻懠顒夊敽闁诲骸绠嶉崕鍗炍涢銏犵；?</Typography.Title>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-            婵犵數濮甸鏍窗濡ゅ啰绱﹂柛褎顨呯壕褰掓煛閸ワ絾鍤嶉柛銉墮閻撴盯鏌涘☉鍗炴灓闁告ɑ鍔欓幃妤呯嵁閸喖濮庡┑鐐茬湴閸旀垵顕ｉ幖浣哥＜闁绘劕顕崢浠嬫⒑闂堟侗鐒鹃柛搴ㄤ憾椤㈡棃顢旈崱妯烘瀾闂佸搫顦悘婵嬪汲閻愮數纾奸柛灞剧☉缁椦囨煙閻熸澘顏柟鐓庢贡閹叉挳宕熼棃娑欐珡闂傚倸鍊风粈渚€骞夐敓鐘偓锕傚炊椤掆偓缁愭鏌熼幑鎰靛殭闁哄绶氶弻鐔煎箚瑜忛幗鐘裁瑰┃鍨偓婵嬪蓟閻斿吋鐒介柨鏇楀亾闁诲繘浜堕弻锟犲焵椤掍胶顩烽悗锝庡亞閸橀亶姊洪幐搴㈢叆闁圭⒈鍋呮穱濠囨嚃閳哄倸鏋戦梺鍝勵槼濞夋洘鏅跺☉姘辩＜鐎光偓閸曨亝鍠氶梺鎼炲姂缁犳牕鐣烽敐鍡楃窞濠电姴鍊婚崫搴ㄦ⒒閸屾瑧鍔嶉柣顏勭秺瀹曟繂鐣濋埀顒勫焵椤掍礁鍤ù婊呭仱閸┾偓妞ゆ帒瀚☉褔鏌ｉ鐐测偓鎼侇敋閿濆鍋ㄩ柛娑橈攻閸庮亪姊洪懡銈呮瀾濠㈢懓妫濋幃楣冩倷椤掑倻鐦堥梺鍐茬殱閸嬫捇鏌涢幇鈺佸婵炲牄鍔戝娲偂鎼达絼绮甸梺鎼炲妼濞尖€愁嚕椤愩埄鍚嬮柛娑卞灡濞堟洟姊洪崨濠冪８闁告柨鏈粋宥夋倷椤掍礁寮垮┑鈽嗗灥濞咃綁鏁嶅鍥╃＜闁绘ê纾晶鐢告煛鐏炵硶鍋撻幇浣告倯闂佸憡渚楅崰妤呭箖濞嗘挻鈷戦梻鍫氭櫇缁夌敻鏌涢妸銉ヨ埞妞ゎ厼娲╃粻娑樷槈濡⒈鍟嬮梻浣告啞閸旀牞銇愰崘銊愌囧蓟閵夛妇鍘告繝銏ｆ硾閿曪附鏅跺☉銏＄厵闁告稑锕ラ崐鎰偓?(stdio) 濠电姷鏁搁崑鐐哄垂閸洖绠伴柛娑橆煬濞堜粙鏌熼梻瀵割槮濡楀懘姊洪幖鐐插姶闁诲繑鐩幃銏ゆ偂鎼达絼绱滈柣搴ゎ潐濞叉牕煤閻樿纾婚柟鍓х帛閻撱儵鎮楅敐搴″⒒婵炲弶鎮傚娲濞戞艾顣洪柣搴㈠嚬閸ｏ絽螞閸曨偒鍚嬪璺侯儑閸?          </Text>
+          <Typography.Title level={5}>MCP Servers</Typography.Title>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>Manage MCP server integrations for the agent.</Text>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {plugins.map(item => (
               <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f9f9f9', borderRadius: 8, border: '1px solid #eee' }}>
@@ -1133,18 +1135,18 @@ export default function ChatPage() {
             icon={<PlusOutlined />} 
             style={{ marginTop: 16 }}
             onClick={() => {
-              const newPlugin = { id: generateId(), name: '闂傚倸鍊风粈渚€骞栭锕€纾圭紓浣股戝▍鐘充繆閵堝懎顏ュù婊冪秺閺屾盯骞囬妸锔界彇濡?(闂傚倸鍊搁崐鐑芥倿閿曗偓椤灝螣閼测晝鐓嬮梺鍓插亝濞叉﹢宕戦鍫熺厱闁斥晛鍠氶悞浠嬫煃?', command: 'npx', args: '', active: false };
+              const newPlugin = { id: generateId(), name: 'New MCP Server', command: 'npx', args: '', active: false };
               setPlugins([...plugins, newPlugin]);
             }}
           >
-            婵犵數濮烽弫鎼佸磿閹寸姷绀婇柍褜鍓氶妵鍕即閸℃顏柛娆忕箻閺岋綁骞囬浣瑰創濠?MCP 闂傚倸鍊风粈浣革耿鏉堚晛鍨濇い鏍ㄧ矋閺嗘粌鈹戦悩鎻掆偓鐢稿几?
+            Add MCP Server
           </Button>
         </div>
       </Modal>
       {/* Skills Modal */}
       <Modal
         title={
-          <Space><ApiOutlined /> <span>Agent 闂傚倸鍊烽懗鍫曞箠閹剧粯鍊堕柛顐犲劚绾惧鏌熼崜褏甯涢柣鎾跺█閹宕烽鐐愶絾銇勯妷銉Ш缂佽鲸甯℃俊鎼佸Ω閳轰焦鎳欑紓鍌欑椤戝懘藝閻㈡悶鈧礁顫滈埀顒勫箖濞嗘挻顥堟繛鎴ｉ哺閸?(濠电姷顣藉Σ鍛村磻閸涱収鐔嗘俊顖氱毞閸嬫挸顫濋悡搴ｄ桓闂?</span></Space>
+          <Space><ApiOutlined /> <span>Agent Skills</span></Space>
         }
         open={showSkillsModal}
         onCancel={() => setShowSkillsModal(false)}
@@ -1154,7 +1156,7 @@ export default function ChatPage() {
         <div style={{ marginTop: 24, maxHeight: '60vh', display: 'flex', flexDirection: 'column' }}>
           <div style={{ marginBottom: 16 }}>
             <Input 
-              placeholder="闂傚倸鍊烽懗鍫曞箠閹捐瑙﹂悗锝庡墮閸ㄦ繈骞栧ǎ顒€濡肩痪鎯с偢閺屾洘绻涢悙顒佺彅缂備胶濯崳锝夊蓟瀹ュ牜妾ㄩ梺鍛婃尵閸犳牠鐛繝鍋芥棃宕ㄩ鑲╂濠电姰鍨煎▔娑㈩敄閸涙潙鐒垫い鎺嗗亾缁剧虎鍘惧Σ鎰板箳閹惧磭绐為柣蹇曞仧閻℃棃寮抽銏♀拺闁硅偐鍋涙俊鎼佹煕閺冣偓閸ㄥ潡鎮伴鈧獮姗€宕烽鐘虫緫婵犳鍠楅敃鈺呭礈濞戞瑦娅?.." 
+              placeholder="Search skills..."
               value={skillSearch}
               onChange={e => setSkillSearch(e.target.value)}
               allowClear
