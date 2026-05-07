@@ -1,24 +1,32 @@
-use crate::sandbox_client::{sanitize_workspace_path, OpenSandboxClient};
 use crate::state::{
-    append_active_assistant_text, ensure_sandbox_id, push_active_assistant_tool_use,
-    push_active_tool_result, remove_sandbox_id, ActiveTurns, SandboxSessions,
+    append_active_assistant_text, push_active_assistant_tool_use, push_active_tool_result,
+    ActiveTurns,
+};
+use crate::workspace::{
+    canonical_workspace_root, resolve_existing_workspace_path, resolve_workspace_search_path,
+    resolve_workspace_write_path, sanitize_workspace_path,
 };
 use api::{MessageRequest, OpenAiCompatClient};
 use axum::response::sse::Event;
+use runtime::permission_enforcer::PermissionEnforcer;
 use runtime::{
-    ApiClient, ApiRequest, AssistantEvent, PermissionPromptDecision, PermissionPrompter,
-    PermissionRequest, RuntimeError, ToolError, ToolExecutor,
+    ApiClient, ApiRequest, AssistantEvent, PermissionPolicy, PermissionPromptDecision,
+    PermissionPrompter, PermissionRequest, RuntimeError, ToolError, ToolExecutor,
 };
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::env;
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex as StdMutex, OnceLock,
 };
 use tokio::sync::{mpsc::Sender, oneshot, Mutex};
 use tools::GlobalToolRegistry;
 
 static ACTION_COUNTER: AtomicUsize = AtomicUsize::new(1);
+static CWD_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
 pub struct WebApiClient {
     pub client: OpenAiCompatClient,
@@ -99,14 +107,13 @@ impl ApiClient for WebApiClient {
             ..Default::default()
         };
 
-        // 阻塞式的 async 桥接
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let mut stream = self
                     .client
                     .stream_message(&message_request)
                     .await
-                    .map_err(|e| RuntimeError::new(e.to_string()))?;
+                    .map_err(|error| RuntimeError::new(error.to_string()))?;
 
                 let mut pending_tool: Option<(String, String, String)> = None;
 
@@ -116,55 +123,20 @@ impl ApiClient for WebApiClient {
                             for block in start.message.content {
                                 match block {
                                     api::OutputContentBlock::Text { text } if !text.is_empty() => {
-                                        append_active_assistant_text(
-                                            &self.active_turns,
-                                            &self.user_id,
-                                            &self.session_id,
-                                            &text,
-                                        )
-                                        .await;
-                                        let sse_data = serde_json::to_string(&serde_json::json!({
-                                            "choices": [{
-                                                "delta": {
-                                                    "content": text
-                                                }
-                                            }]
-                                        })).unwrap_or_default();
-                                        let _ = self
-                                            .tx
-                                            .send(
-                                                Event::default()
-                                                    .event("message")
-                                                    .data(sse_data),
-                                            )
-                                            .await;
-                                        events.push(AssistantEvent::TextDelta(text));
+                                        self.push_text_delta(&mut events, text).await;
                                     }
                                     api::OutputContentBlock::ToolUse { id, name, input } => {
-                                        let input_str = if input.is_null()
-                                            || (input.is_object()
-                                                && input.as_object().unwrap().is_empty())
-                                        {
-                                            String::new()
-                                        } else if input.is_string() {
-                                            input.as_str().unwrap().to_string()
-                                        } else {
-                                            input.to_string()
-                                        };
+                                        let input = tool_input_to_string(input);
                                         push_active_assistant_tool_use(
                                             &self.active_turns,
                                             &self.user_id,
                                             &self.session_id,
                                             id.clone(),
                                             name.clone(),
-                                            input_str.clone(),
+                                            input.clone(),
                                         )
                                         .await;
-                                        events.push(AssistantEvent::ToolUse {
-                                            id,
-                                            name,
-                                            input: input_str,
-                                        });
+                                        events.push(AssistantEvent::ToolUse { id, name, input });
                                     }
                                     _ => {}
                                 }
@@ -174,39 +146,12 @@ impl ApiClient for WebApiClient {
                             if let api::OutputContentBlock::ToolUse { id, name, input } =
                                 start.content_block
                             {
-                                let input_str = if input.is_null()
-                                    || (input.is_object() && input.as_object().unwrap().is_empty())
-                                {
-                                    String::new()
-                                } else if input.is_string() {
-                                    input.as_str().unwrap().to_string()
-                                } else {
-                                    input.to_string()
-                                };
-                                pending_tool = Some((id, name, input_str));
+                                pending_tool = Some((id, name, tool_input_to_string(input)));
                             }
                         }
                         api::StreamEvent::ContentBlockDelta(delta) => match delta.delta {
                             api::ContentBlockDelta::TextDelta { text } if !text.is_empty() => {
-                                append_active_assistant_text(
-                                    &self.active_turns,
-                                    &self.user_id,
-                                    &self.session_id,
-                                    &text,
-                                )
-                                .await;
-                                let sse_data = serde_json::to_string(&serde_json::json!({
-                                    "choices": [{
-                                        "delta": {
-                                            "content": text
-                                        }
-                                    }]
-                                })).unwrap_or_default();
-                                let _ = self
-                                    .tx
-                                    .send(Event::default().event("message").data(sse_data))
-                                    .await;
-                                events.push(AssistantEvent::TextDelta(text));
+                                self.push_text_delta(&mut events, text).await;
                             }
                             api::ContentBlockDelta::InputJsonDelta { partial_json } => {
                                 if let Some((_, _, ref mut input)) = pending_tool {
@@ -237,168 +182,118 @@ impl ApiClient for WebApiClient {
             })
         })?;
 
-        // 补一个 MessageStop
         events.push(AssistantEvent::MessageStop);
-
         Ok(events)
+    }
+}
+
+impl WebApiClient {
+    async fn push_text_delta(&self, events: &mut Vec<AssistantEvent>, text: String) {
+        append_active_assistant_text(&self.active_turns, &self.user_id, &self.session_id, &text)
+            .await;
+        let sse_data = serde_json::to_string(&serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "content": text
+                }
+            }]
+        }))
+        .unwrap_or_default();
+        let _ = self
+            .tx
+            .send(Event::default().event("message").data(sse_data))
+            .await;
+        events.push(AssistantEvent::TextDelta(text));
     }
 }
 
 pub struct WebToolExecutor {
     pub tx: Sender<Event>,
-    pub sandbox_client: OpenSandboxClient,
-    pub sandbox_sessions: SandboxSessions,
     pub active_turns: ActiveTurns,
     pub user_id: String,
     pub session_id: String,
-    pub sandbox_id: Option<String>,
-    pub tool_registry: GlobalToolRegistry,
-    pub permission_mode: runtime::PermissionMode,
-    /// 连续 bash 错误计数器 — 防止 agent loop 无限重试沙箱命令
-    consecutive_bash_errors: u32,
+    pub workspace_dir: PathBuf,
+    tool_registry: GlobalToolRegistry,
 }
-
-const MAX_CONSECUTIVE_BASH_ERRORS: u32 = 3;
 
 impl WebToolExecutor {
     pub fn new(
         tx: Sender<Event>,
         user_id: String,
         session_id: String,
-        sandbox_client: OpenSandboxClient,
-        sandbox_sessions: SandboxSessions,
         active_turns: ActiveTurns,
         permission_mode: runtime::PermissionMode,
+        workspace_dir: PathBuf,
     ) -> Self {
         Self {
             tx,
-            sandbox_client,
-            sandbox_sessions,
             active_turns,
             user_id,
             session_id,
-            sandbox_id: None,
-            tool_registry: GlobalToolRegistry::builtin(),
-            permission_mode,
-            consecutive_bash_errors: 0,
+            workspace_dir,
+            tool_registry: build_tool_registry(permission_mode),
         }
     }
 
-    async fn ensure_sandbox(&mut self) -> Result<String, String> {
-        if let Some(ref id) = self.sandbox_id {
-            return Ok(id.clone());
+    fn execute_registry_tool(&self, tool_name: &str, input: &str) -> Result<String, String> {
+        let normalized_input = if input.trim().is_empty() { "{}" } else { input };
+        let raw_input_value: Value = serde_json::from_str(normalized_input).map_err(|error| {
+            tracing::error!(
+                "Failed to parse ToolUse input. Raw input: {:?}",
+                normalized_input
+            );
+            format!("Invalid input JSON: {error}")
+        })?;
+
+        let canonical_name = canonical_tool_name(tool_name);
+        if canonical_name == "glob_search" {
+            return self.execute_glob_search(&raw_input_value);
         }
-        let id = ensure_sandbox_id(
-            &self.sandbox_client,
-            &self.sandbox_sessions,
-            &self.user_id,
-            &self.session_id,
-        )
-        .await?;
-        self.sandbox_id = Some(id.clone());
-        Ok(id)
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct BashInput {
-    command: String,
-    timeout: Option<u64>,
-}
-#[derive(serde::Deserialize)]
-struct ReadFileInput {
-    path: String,
-    offset: Option<usize>,
-    limit: Option<usize>,
-}
-#[derive(serde::Deserialize)]
-struct WriteFileInput {
-    path: String,
-    content: String,
-}
-#[derive(serde::Deserialize)]
-struct EditFileInput {
-    path: String,
-    old_string: String,
-    new_string: String,
-    replace_all: Option<bool>,
-}
-
-fn canonical_tool_name(tool_name: &str) -> &str {
-    match tool_name {
-        "bash" | "Bash" => "Bash",
-        "read_file" | "ReadFile" => "ReadFile",
-        "write_file" | "WriteFile" => "WriteFile",
-        "edit_file" | "EditFile" => "EditFile",
-        other => other,
-    }
-}
-
-fn validate_bash_command_for_web(
-    command: &str,
-    permission_mode: runtime::PermissionMode,
-) -> Result<(), String> {
-    match runtime::bash_validation::validate_command(
-        command,
-        permission_mode,
-        std::path::Path::new("/workspace"),
-    ) {
-        runtime::bash_validation::ValidationResult::Allow => Ok(()),
-        runtime::bash_validation::ValidationResult::Block { reason } => {
-            Err(format!("Bash command blocked: {reason}"))
+        if canonical_name == "grep_search" {
+            return self.execute_grep_search(&raw_input_value);
         }
-        runtime::bash_validation::ValidationResult::Warn { message } => {
-            Err(format!("Bash command requires approval: {message}"))
-        }
-    }
-}
 
-fn read_file_output(
-    remote_path: String,
-    content: String,
-    offset: Option<usize>,
-    limit: Option<usize>,
-) -> runtime::ReadFileOutput {
-    let lines = content.lines().collect::<Vec<_>>();
-    let start_index = offset.unwrap_or(0).min(lines.len());
-    let end_index = limit.map_or(lines.len(), |limit| {
-        start_index.saturating_add(limit).min(lines.len())
-    });
-    let selected = lines[start_index..end_index].join("\n");
+        let input_value =
+            normalize_tool_input_paths(canonical_name, raw_input_value, &self.workspace_dir)?;
 
-    runtime::ReadFileOutput {
-        kind: "text".to_string(),
-        file: runtime::TextFilePayload {
-            file_path: remote_path,
-            content: selected,
-            num_lines: end_index.saturating_sub(start_index),
-            start_line: start_index.saturating_add(1),
-            total_lines: lines.len(),
-        },
-    }
-}
-
-fn make_structured_patch(original: &str, updated: &str) -> Vec<runtime::StructuredPatchHunk> {
-    let mut lines = Vec::new();
-    for line in original.lines() {
-        lines.push(format!("-{line}"));
-    }
-    for line in updated.lines() {
-        lines.push(format!("+{line}"));
+        with_workspace_cwd(&self.workspace_dir, || {
+            self.tool_registry.execute(canonical_name, &input_value)
+        })
+        .and_then(|result| result)
     }
 
-    vec![runtime::StructuredPatchHunk {
-        old_start: 1,
-        old_lines: original.lines().count(),
-        new_start: 1,
-        new_lines: updated.lines().count(),
-        lines,
-    }]
-}
+    fn execute_glob_search(&self, input: &Value) -> Result<String, String> {
+        let mut input: GlobSearchInputValue = serde_json::from_value(input.clone())
+            .map_err(|error| format!("Invalid input JSON: {error}"))?;
+        input.pattern = sanitize_workspace_path(&input.pattern)?;
 
-impl ToolExecutor for WebToolExecutor {
-    fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
-        // 运行工具时的副作用：通知前端进入工具执行状态
+        let base_path = resolve_workspace_search_path(&self.workspace_dir, input.path.as_deref())?;
+        validate_glob_pattern_prefix(&self.workspace_dir, &base_path, &input.pattern)?;
+
+        let base_path_string = base_path.to_string_lossy().into_owned();
+        let mut output = runtime::glob_search(&input.pattern, Some(base_path_string.as_str()))
+            .map_err(|error| error.to_string())?;
+        output
+            .filenames
+            .retain(|filename| is_workspace_match(&self.workspace_dir, Path::new(filename)));
+        output.num_files = output.filenames.len();
+
+        serde_json::to_string_pretty(&output)
+            .map_err(|error| format!("Failed to encode glob_search output: {error}"))
+    }
+
+    fn execute_grep_search(&self, input: &Value) -> Result<String, String> {
+        let mut input: runtime::GrepSearchInput = serde_json::from_value(input.clone())
+            .map_err(|error| format!("Invalid input JSON: {error}"))?;
+        let base_path = resolve_workspace_search_path(&self.workspace_dir, input.path.as_deref())?;
+        input.path = Some(base_path.to_string_lossy().into_owned());
+
+        let output = runtime::grep_search(&input).map_err(|error| error.to_string())?;
+        serde_json::to_string_pretty(&output)
+            .map_err(|error| format!("Failed to encode grep_search output: {error}"))
+    }
+
+    fn send_tool_start(&self, tool_name: &str, input: &str) {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let sse_data = serde_json::to_string(&serde_json::json!({
@@ -412,212 +307,13 @@ impl ToolExecutor for WebToolExecutor {
                     .await;
             });
         });
+    }
 
-        let normalized_input = if input.trim().is_empty() { "{}" } else { input };
-        let value: Value = serde_json::from_str(normalized_input).map_err(|e| {
-            tracing::error!(
-                "Failed to parse ToolUse input. Raw input: {:?}",
-                normalized_input
-            );
-            ToolError::new(format!("Invalid input JSON: {}", e))
-        })?;
-
-        let result: Result<String, String> = tokio::task::block_in_place(|| {
+    fn send_tool_result(&self, tool_name: &str, result: &Result<String, String>) {
+        tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                match canonical_tool_name(tool_name) {
-                    "Bash" => {
-                        // 连续错误熔断：如果 bash 已连续失败多次，直接告知模型停止重试
-                        if self.consecutive_bash_errors >= MAX_CONSECUTIVE_BASH_ERRORS {
-                            return Err(format!(
-                                "沙箱命令已连续失败 {} 次，请停止重试 bash 命令。\
-                                请直接向用户说明当前沙箱执行环境不可用，建议用户检查沙箱服务状态。",
-                                self.consecutive_bash_errors
-                            ));
-                        }
-                        let sandbox_id = match self.ensure_sandbox().await {
-                            Ok(id) => id,
-                            Err(e) => {
-                                self.consecutive_bash_errors += 1;
-                                return Err(format!(
-                                    "沙箱创建失败 (第{}次连续错误): {}",
-                                    self.consecutive_bash_errors, e
-                                ));
-                            }
-                        };
-                        let req: BashInput =
-                            serde_json::from_str(normalized_input).map_err(|e| e.to_string())?;
-
-                        // 只读模式下的命令安全校验
-                        validate_bash_command_for_web(&req.command, self.permission_mode)?;
-
-                        match self
-                            .sandbox_client
-                            .execute_bash(&sandbox_id, &req.command, req.timeout)
-                            .await
-                        {
-                            Ok(res) => {
-                                // 成功执行，重置连续错误计数
-                                self.consecutive_bash_errors = 0;
-                                let return_code_interpretation = if res.exit_code == 0 {
-                                    None
-                                } else {
-                                    Some(format!("exit_code:{}", res.exit_code))
-                                };
-                                let output = serde_json::json!({
-                                    "stdout": res.stdout,
-                                    "stderr": res.stderr,
-                                    "interrupted": false,
-                                    "return_code_interpretation": return_code_interpretation
-                                });
-                                Ok(serde_json::to_string_pretty(&output).unwrap_or_default())
-                            }
-                            Err(e) => {
-                                self.consecutive_bash_errors += 1;
-                                // 如果沙箱执行失败但 sandbox_id 还在，可能是容器内命令问题而非连接问题
-                                // 清空 sandbox_id 以便下次重新创建
-                                if e.contains("request failed") || e.contains("endpoint") {
-                                    self.sandbox_id = None;
-                                    remove_sandbox_id(
-                                        &self.sandbox_sessions,
-                                        &self.user_id,
-                                        &self.session_id,
-                                    )
-                                    .await;
-                                }
-                                Err(format!(
-                                    "命令执行失败 (第{}次连续错误): {}",
-                                    self.consecutive_bash_errors, e
-                                ))
-                            }
-                        }
-                    }
-                    "ReadFile" => {
-                        let req: ReadFileInput =
-                            serde_json::from_str(normalized_input).map_err(|e| e.to_string())?;
-                        let sandbox_id = self.ensure_sandbox().await?;
-                        let workspace_path = sanitize_workspace_path(&req.path)?;
-                        let bytes = self
-                            .sandbox_client
-                            .download_file_bytes(&sandbox_id, &workspace_path.remote_path)
-                            .await?;
-                        let content = String::from_utf8(bytes).map_err(|_| {
-                            format!(
-                                "File {} is not valid UTF-8 text",
-                                workspace_path.remote_path
-                            )
-                        })?;
-                        let output = read_file_output(
-                            workspace_path.remote_path,
-                            content,
-                            req.offset,
-                            req.limit,
-                        );
-                        serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
-                    }
-                    "WriteFile" => {
-                        let req: WriteFileInput =
-                            serde_json::from_str(normalized_input).map_err(|e| e.to_string())?;
-                        let sandbox_id = self.ensure_sandbox().await?;
-                        let workspace_path = sanitize_workspace_path(&req.path)?;
-                        let original_file = self
-                            .sandbox_client
-                            .download_file_bytes(&sandbox_id, &workspace_path.remote_path)
-                            .await
-                            .ok()
-                            .and_then(|bytes| String::from_utf8(bytes).ok());
-                        let remote_path = self
-                            .sandbox_client
-                            .upload_file_bytes(
-                                &sandbox_id,
-                                &workspace_path.remote_path,
-                                req.content.as_bytes(),
-                            )
-                            .await?;
-                        let structured_patch = make_structured_patch(
-                            original_file.as_deref().unwrap_or(""),
-                            &req.content,
-                        );
-                        let output = runtime::WriteFileOutput {
-                            kind: if original_file.is_some() {
-                                "update"
-                            } else {
-                                "create"
-                            }
-                            .to_string(),
-                            file_path: remote_path,
-                            content: req.content,
-                            structured_patch,
-                            original_file,
-                            git_diff: None,
-                        };
-                        serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
-                    }
-                    "EditFile" => {
-                        let req: EditFileInput =
-                            serde_json::from_str(normalized_input).map_err(|e| e.to_string())?;
-                        if req.old_string == req.new_string {
-                            return Err("old_string and new_string must differ".to_string());
-                        }
-
-                        let sandbox_id = self.ensure_sandbox().await?;
-                        let workspace_path = sanitize_workspace_path(&req.path)?;
-                        let bytes = self
-                            .sandbox_client
-                            .download_file_bytes(&sandbox_id, &workspace_path.remote_path)
-                            .await?;
-                        let original_file = String::from_utf8(bytes).map_err(|_| {
-                            format!(
-                                "File {} is not valid UTF-8 text",
-                                workspace_path.remote_path
-                            )
-                        })?;
-                        if !original_file.contains(&req.old_string) {
-                            return Err("old_string not found in file".to_string());
-                        }
-
-                        let replace_all = req.replace_all.unwrap_or(false);
-                        let updated = if replace_all {
-                            original_file.replace(&req.old_string, &req.new_string)
-                        } else {
-                            original_file.replacen(&req.old_string, &req.new_string, 1)
-                        };
-                        let remote_path = self
-                            .sandbox_client
-                            .upload_file_bytes(
-                                &sandbox_id,
-                                &workspace_path.remote_path,
-                                updated.as_bytes(),
-                            )
-                            .await?;
-                        let output = runtime::EditFileOutput {
-                            file_path: remote_path,
-                            old_string: req.old_string,
-                            new_string: req.new_string,
-                            structured_patch: make_structured_patch(&original_file, &updated),
-                            original_file,
-                            user_modified: false,
-                            replace_all,
-                            git_diff: None,
-                        };
-                        serde_json::to_string_pretty(&output).map_err(|e| e.to_string())
-                    }
-                    _ => {
-                        // 回退到 tools::lib 原生执行
-                        self.tool_registry
-                            .execute(tool_name, &value)
-                            .map_err(|e| e.to_string())
-                            .and_then(|v| {
-                                serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
-                            })
-                    }
-                }
-            })
-        });
-
-        match &result {
-            Ok(output) => {
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
+                match result {
+                    Ok(output) => {
                         push_active_tool_result(
                             &self.active_turns,
                             &self.user_id,
@@ -636,35 +332,38 @@ impl ToolExecutor for WebToolExecutor {
                             .tx
                             .send(Event::default().event("tool_call_result").data(sse_data))
                             .await;
-                    });
-                });
-            }
-            Err(e) => {
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
+                    }
+                    Err(error) => {
                         push_active_tool_result(
                             &self.active_turns,
                             &self.user_id,
                             &self.session_id,
                             tool_name.to_string(),
-                            e.to_string(),
+                            error.clone(),
                             true,
                         )
                         .await;
                         let sse_data = serde_json::to_string(&serde_json::json!({
                             "tool": tool_name,
-                            "error": e.to_string()
+                            "error": error
                         }))
                         .unwrap_or_default();
                         let _ = self
                             .tx
                             .send(Event::default().event("tool_call_result").data(sse_data))
                             .await;
-                    });
-                });
-            }
-        }
+                    }
+                }
+            });
+        });
+    }
+}
 
+impl ToolExecutor for WebToolExecutor {
+    fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
+        self.send_tool_start(tool_name, input);
+        let result = self.execute_registry_tool(tool_name, input);
+        self.send_tool_result(tool_name, &result);
         result.map_err(ToolError::new)
     }
 }
@@ -679,7 +378,6 @@ impl PermissionPrompter for WebPermissionPrompter {
         let action_id = format!("action_{}", ACTION_COUNTER.fetch_add(1, Ordering::Relaxed));
         let (tx, rx) = oneshot::channel();
 
-        // 将 sender 放入全局 pending_actions 以供 /resolve 调用
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let mut actions = self.pending_actions.lock().await;
@@ -687,14 +385,13 @@ impl PermissionPrompter for WebPermissionPrompter {
             });
         });
 
-        // 向前端发送阻断授权请求事件，并在事件中带上 action_id
         let send_result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let sse_data = serde_json::to_string(&serde_json::json!({
                     "action_id": action_id,
                     "tool": request.tool_name,
                     "required_mode": request.required_mode.as_str(),
-                    "message": "需要用户审批"
+                    "message": "User approval is required"
                 }))
                 .unwrap_or_default();
                 self.tx
@@ -703,7 +400,6 @@ impl PermissionPrompter for WebPermissionPrompter {
             })
         });
 
-        // 如果发送失败，说明客户端已经断开连接（后台异步执行状态）。此时直接拒绝，防止死锁挂起。
         if send_result.is_err() {
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async {
@@ -712,13 +408,11 @@ impl PermissionPrompter for WebPermissionPrompter {
                 });
             });
             return PermissionPromptDecision::Deny {
-                reason:
-                    "Client disconnected. Auto-denied to prevent blocking background execution."
-                        .to_string(),
+                reason: "Client disconnected. Auto-denied to prevent background blocking."
+                    .to_string(),
             };
         }
 
-        // 挂起当前引擎执行线程，等待前端审批结果（通过 /resolve REST API 回传）
         match rx.blocking_recv() {
             Ok(decision) => decision,
             Err(_) => PermissionPromptDecision::Deny {
@@ -728,42 +422,316 @@ impl PermissionPrompter for WebPermissionPrompter {
     }
 }
 
+fn tool_input_to_string(input: Value) -> String {
+    if input.is_null() || input.as_object().is_some_and(Map::is_empty) {
+        String::new()
+    } else if input.is_string() {
+        input.as_str().unwrap_or_default().to_string()
+    } else {
+        input.to_string()
+    }
+}
+
+fn canonical_tool_name(tool_name: &str) -> &str {
+    match tool_name {
+        "bash" | "Bash" => "bash",
+        "read_file" | "ReadFile" => "read_file",
+        "write_file" | "WriteFile" => "write_file",
+        "edit_file" | "EditFile" => "edit_file",
+        other => other,
+    }
+}
+
+fn build_tool_registry(permission_mode: runtime::PermissionMode) -> GlobalToolRegistry {
+    let registry = GlobalToolRegistry::builtin();
+    let policy = match registry.permission_specs(None) {
+        Ok(specs) => specs.into_iter().fold(
+            PermissionPolicy::new(permission_mode),
+            |policy, (name, required_permission)| {
+                policy.with_tool_requirement(name, required_permission)
+            },
+        ),
+        Err(error) => {
+            tracing::error!("Failed to build web tool permission policy: {error}");
+            PermissionPolicy::new(permission_mode)
+        }
+    };
+
+    registry.with_enforcer(PermissionEnforcer::new(policy))
+}
+
+fn normalize_tool_input_paths(
+    tool_name: &str,
+    mut input: Value,
+    workspace: &Path,
+) -> Result<Value, String> {
+    if let Value::Object(object) = &mut input {
+        match tool_name {
+            "read_file" => normalize_existing_path_field(object, "path", workspace)?,
+            "write_file" => normalize_write_path_field(object, "path", workspace)?,
+            "edit_file" => normalize_existing_path_field(object, "path", workspace)?,
+            _ => {}
+        }
+    }
+    Ok(input)
+}
+
+fn normalize_existing_path_field(
+    object: &mut Map<String, Value>,
+    field: &str,
+    workspace: &Path,
+) -> Result<(), String> {
+    if let Some(Value::String(value)) = object.get_mut(field) {
+        let resolved = resolve_existing_workspace_path(workspace, value)?;
+        *value = resolved.absolute_path.to_string_lossy().into_owned();
+    }
+    Ok(())
+}
+
+fn normalize_write_path_field(
+    object: &mut Map<String, Value>,
+    field: &str,
+    workspace: &Path,
+) -> Result<(), String> {
+    if let Some(Value::String(value)) = object.get_mut(field) {
+        let resolved = resolve_workspace_write_path(workspace, value)?;
+        *value = resolved.absolute_path.to_string_lossy().into_owned();
+    }
+    Ok(())
+}
+
+fn validate_glob_pattern_prefix(
+    workspace: &Path,
+    base_path: &Path,
+    pattern: &str,
+) -> Result<(), String> {
+    let literal_prefix = literal_glob_prefix(pattern);
+    if literal_prefix.is_empty() {
+        return Ok(());
+    }
+
+    let candidate = base_path.join(literal_prefix.replace('/', std::path::MAIN_SEPARATOR_STR));
+    if !candidate.exists() {
+        return Ok(());
+    }
+
+    let canonical_root = canonical_workspace_root(workspace)?;
+    let canonical_candidate = candidate
+        .canonicalize()
+        .map_err(|error| format!("failed to resolve workspace glob prefix: {error}"))?;
+
+    if canonical_candidate.starts_with(&canonical_root) {
+        Ok(())
+    } else {
+        Err("path must stay inside the session workspace".to_string())
+    }
+}
+
+fn literal_glob_prefix(pattern: &str) -> String {
+    let mut prefix = Vec::new();
+    for component in pattern.split('/') {
+        if component.is_empty() || component.chars().any(is_glob_meta_char) {
+            break;
+        }
+        prefix.push(component);
+    }
+    prefix.join("/")
+}
+
+fn is_glob_meta_char(ch: char) -> bool {
+    matches!(ch, '*' | '?' | '[' | ']' | '{' | '}')
+}
+
+fn is_workspace_match(workspace: &Path, candidate: &Path) -> bool {
+    let Ok(canonical_root) = canonical_workspace_root(workspace) else {
+        return false;
+    };
+    let Ok(canonical_candidate) = candidate.canonicalize() else {
+        return false;
+    };
+    canonical_candidate.starts_with(&canonical_root)
+}
+
+fn with_workspace_cwd<R>(workspace: &Path, execute: impl FnOnce() -> R) -> Result<R, String> {
+    let lock = CWD_LOCK.get_or_init(|| StdMutex::new(()));
+    let _guard = lock
+        .lock()
+        .map_err(|_| "workspace execution lock is poisoned".to_string())?;
+
+    std::fs::create_dir_all(workspace)
+        .map_err(|error| format!("Failed to create session workspace: {error}"))?;
+    let original_dir = env::current_dir()
+        .map_err(|error| format!("Failed to inspect current directory: {error}"))?;
+    env::set_current_dir(workspace)
+        .map_err(|error| format!("Failed to enter session workspace: {error}"))?;
+
+    let _restore = CwdRestore { original_dir };
+    Ok(execute())
+}
+
+struct CwdRestore {
+    original_dir: PathBuf,
+}
+
+impl Drop for CwdRestore {
+    fn drop(&mut self) {
+        if let Err(error) = env::set_current_dir(&self.original_dir) {
+            tracing::error!("Failed to restore process cwd after tool execution: {error}");
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobSearchInputValue {
+    pattern: String,
+    path: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{canonical_tool_name, make_structured_patch, validate_bash_command_for_web};
-    use runtime::PermissionMode;
+    use super::{canonical_tool_name, literal_glob_prefix};
+    use crate::state::ActiveTurns;
+    use axum::response::sse::Event;
+    use runtime::{PermissionMode, ToolExecutor};
+    use std::collections::HashMap;
+    use std::fs;
+    use std::sync::Arc;
+    use tokio::sync::{mpsc, Mutex};
 
     #[test]
     fn canonical_tool_name_maps_lowercase_file_tools() {
-        assert_eq!(canonical_tool_name("read_file"), "ReadFile");
-        assert_eq!(canonical_tool_name("write_file"), "WriteFile");
-        assert_eq!(canonical_tool_name("edit_file"), "EditFile");
-        assert_eq!(canonical_tool_name("bash"), "Bash");
+        assert_eq!(canonical_tool_name("read_file"), "read_file");
+        assert_eq!(canonical_tool_name("write_file"), "write_file");
+        assert_eq!(canonical_tool_name("edit_file"), "edit_file");
+        assert_eq!(canonical_tool_name("bash"), "bash");
+        assert_eq!(canonical_tool_name("ReadFile"), "read_file");
+        assert_eq!(canonical_tool_name("WriteFile"), "write_file");
+        assert_eq!(canonical_tool_name("EditFile"), "edit_file");
+        assert_eq!(canonical_tool_name("Bash"), "bash");
+        assert_eq!(canonical_tool_name("WebFetch"), "WebFetch");
     }
 
     #[test]
-    fn web_bash_validation_rejects_warn_results() {
-        let err = validate_bash_command_for_web("rm -rf /", PermissionMode::DangerFullAccess)
-            .expect_err("destructive warnings should not execute silently");
-
-        assert!(err.contains("requires approval"));
+    fn literal_glob_prefix_stops_at_first_glob_component() {
+        assert_eq!(literal_glob_prefix("nested/output/*.txt"), "nested/output");
+        assert_eq!(literal_glob_prefix("**/*.rs"), "");
+        assert_eq!(literal_glob_prefix("reports/{daily,weekly}.md"), "reports");
     }
 
-    #[test]
-    fn web_file_tools_return_patch_metadata() {
-        let patch = make_structured_patch("old\nvalue", "new\nvalue");
+    #[tokio::test(flavor = "multi_thread")]
+    async fn web_tool_executor_uses_local_workspace_for_file_tools() {
+        let workspace = std::env::temp_dir().join(format!(
+            "claw-api-server-local-workspace-test-{}",
+            std::process::id()
+        ));
+        if workspace.exists() {
+            fs::remove_dir_all(&workspace).expect("clean test workspace");
+        }
+        fs::create_dir_all(&workspace).expect("create test workspace");
 
-        assert_eq!(patch.len(), 1);
-        assert_eq!(patch[0].old_lines, 2);
-        assert_eq!(patch[0].new_lines, 2);
-        assert_eq!(
-            patch[0].lines,
-            vec![
-                "-old".to_string(),
-                "-value".to_string(),
-                "+new".to_string(),
-                "+value".to_string()
-            ]
+        let (tx, _rx) = mpsc::channel::<Event>(16);
+        let active_turns: ActiveTurns = Arc::new(Mutex::new(HashMap::new()));
+        let mut executor = super::WebToolExecutor::new(
+            tx,
+            "user-1".to_string(),
+            "session-1".to_string(),
+            active_turns,
+            PermissionMode::DangerFullAccess,
+            workspace.clone(),
         );
+
+        executor
+            .execute(
+                "write_file",
+                r#"{"path":"nested/demo.txt","content":"hello from local workspace"}"#,
+            )
+            .expect("write_file should succeed in session workspace");
+
+        assert_eq!(
+            fs::read_to_string(workspace.join("nested/demo.txt")).expect("file was written"),
+            "hello from local workspace"
+        );
+
+        let output = executor
+            .execute("ReadFile", r#"{"path":"/workspace/nested/demo.txt"}"#)
+            .expect("ReadFile alias should read from session workspace");
+
+        assert!(output.contains("hello from local workspace"));
+
+        fs::remove_dir_all(&workspace).expect("cleanup test workspace");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn web_tool_executor_rejects_file_path_escape() {
+        let root = std::env::temp_dir().join(format!(
+            "claw-api-server-escape-test-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("workspace");
+        if root.exists() {
+            fs::remove_dir_all(&root).expect("clean test root");
+        }
+        fs::create_dir_all(&workspace).expect("create test workspace");
+
+        let (tx, _rx) = mpsc::channel::<Event>(16);
+        let active_turns: ActiveTurns = Arc::new(Mutex::new(HashMap::new()));
+        let mut executor = super::WebToolExecutor::new(
+            tx,
+            "user-1".to_string(),
+            "session-1".to_string(),
+            active_turns,
+            PermissionMode::DangerFullAccess,
+            workspace,
+        );
+
+        let error = executor
+            .execute(
+                "write_file",
+                r#"{"path":"../escape.txt","content":"must not escape"}"#,
+            )
+            .expect_err("path traversal must be rejected");
+
+        assert!(error.to_string().contains("inside the session workspace"));
+        assert!(!root.join("escape.txt").exists());
+
+        fs::remove_dir_all(&root).expect("cleanup test root");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn web_tool_executor_rejects_glob_symlink_escape_prefix() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "claw-api-server-glob-escape-test-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("workspace");
+        let outside = root.join("outside");
+        if root.exists() {
+            fs::remove_dir_all(&root).expect("clean test root");
+        }
+        fs::create_dir_all(&workspace).expect("create test workspace");
+        fs::create_dir_all(&outside).expect("create outside directory");
+        symlink(&outside, workspace.join("escape")).expect("create symlink");
+
+        let (tx, _rx) = mpsc::channel::<Event>(16);
+        let active_turns: ActiveTurns = Arc::new(Mutex::new(HashMap::new()));
+        let mut executor = super::WebToolExecutor::new(
+            tx,
+            "user-1".to_string(),
+            "session-1".to_string(),
+            active_turns,
+            PermissionMode::DangerFullAccess,
+            workspace,
+        );
+
+        let error = executor
+            .execute("glob_search", r#"{"pattern":"escape/**/*.txt"}"#)
+            .expect_err("glob search should reject escaping symlink prefixes");
+
+        assert!(error.to_string().contains("inside the session workspace"));
+
+        fs::remove_dir_all(&root).expect("cleanup test root");
     }
 }

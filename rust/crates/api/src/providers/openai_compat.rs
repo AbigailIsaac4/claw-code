@@ -701,6 +701,7 @@ struct ChatMessage {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Vec<ResponseToolCall>,
+    #[allow(dead_code)]
     #[serde(default)]
     function_call: Option<ResponseToolFunction>,
 }

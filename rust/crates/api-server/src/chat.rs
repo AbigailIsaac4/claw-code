@@ -14,6 +14,7 @@ use crate::runtime_bridge::{WebApiClient, WebPermissionPrompter, WebToolExecutor
 use crate::state::{
     active_turn_snapshot, finish_turn, try_start_turn, ActiveTurnSnapshot, ActiveTurns, AppState,
 };
+use crate::workspace::session_workspace;
 use runtime::{
     ContentBlock, ConversationMessage, ConversationRuntime, MessageRole, PermissionPolicy,
     PermissionPromptDecision, Session,
@@ -21,7 +22,7 @@ use runtime::{
 use tools::GlobalToolRegistry;
 
 fn build_web_permission_policy(permission_mode: runtime::PermissionMode) -> PermissionPolicy {
-    match GlobalToolRegistry::builtin().permission_specs(None) {
+    let policy = match GlobalToolRegistry::builtin().permission_specs(None) {
         Ok(specs) => specs.into_iter().fold(
             PermissionPolicy::new(permission_mode),
             |policy, (name, required_permission)| {
@@ -32,7 +33,19 @@ fn build_web_permission_policy(permission_mode: runtime::PermissionMode) -> Perm
             tracing::error!("Failed to build web permission policy from tool registry: {error}");
             PermissionPolicy::new(permission_mode)
         }
-    }
+    };
+
+    [
+        ("Bash", "bash"),
+        ("ReadFile", "read_file"),
+        ("WriteFile", "write_file"),
+        ("EditFile", "edit_file"),
+    ]
+    .into_iter()
+    .fold(policy, |policy, (alias, canonical)| {
+        let required_mode = policy.required_mode_for(canonical);
+        policy.with_tool_requirement(alias, required_mode)
+    })
 }
 
 fn user_text_content(message: &ConversationMessage) -> Option<String> {
@@ -186,9 +199,18 @@ pub async fn chat_completions(
     let tx_prompter = tx.clone();
     let pending_actions = state.pending_actions.clone();
     let db = state.db.clone();
-    let sandbox_client = state.sandbox_client.clone();
-    let sandbox_sessions = state.sandbox_sessions.clone();
     let active_turns = state.active_turns.clone();
+    let workspace_dir = match session_workspace(&user_id, &session_id) {
+        Ok(path) => path,
+        Err(error) => {
+            let _ = tx
+                .send(Event::default().event("runtime_error").data(error))
+                .await;
+            let _ = tx.send(Event::default().event("done").data("[DONE]")).await;
+            let stream = ReceiverStream::new(rx).map(Ok);
+            return Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new());
+        }
+    };
 
     // 在 spawn_blocking 中运行，因为 run_turn 会大量发生线程阻塞（调用 tokio::block_in_place）
     tokio::task::spawn_blocking(move || {
@@ -216,10 +238,9 @@ pub async fn chat_completions(
             tx_tool,
             user_id.clone(),
             session_id.clone(),
-            sandbox_client,
-            sandbox_sessions,
             active_turns.clone(),
             permission_mode,
+            workspace_dir,
         );
         let mut prompter = WebPermissionPrompter {
             tx: tx_prompter,
@@ -248,7 +269,10 @@ pub async fn chat_completions(
             }
         }
 
-        let mut system_prompts = Vec::new();
+        let mut system_prompts = vec![
+            "The current working directory is this session's isolated local workspace. Use relative file paths for uploaded and generated files; do not assume a /workspace absolute directory exists."
+                .to_string(),
+        ];
         if permission_mode == runtime::PermissionMode::ReadOnly {
             system_prompts.push(
                 "你当前处于 **Plan 模式（只读）**。\n\
@@ -295,7 +319,8 @@ pub async fn chat_completions(
                     let _ = sqlx::query(
                         r#"INSERT INTO sessions (id, user_id, title, state)
                        VALUES (?, ?, ?, ?)
-                       ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP"#
+                       ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP
+                       WHERE sessions.user_id=excluded.user_id"#
                     )
                     .bind(&session_id)
                     .bind(&user_id)
@@ -319,6 +344,38 @@ pub async fn chat_completions(
                     Some("Conversation runtime panicked while processing the turn".to_string())
                 }
             };
+
+            // Phase 0.2: 无论成功还是失败，立即保存当前 Session 快照
+            // 防止 run_turn 完成后、最终 DB 写入前进程崩溃导致中间状态全部丢失
+            {
+                let checkpoint_title = payload
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "新的会话".to_string());
+                let checkpoint_state = if let Ok(json_val) = runtime.session().to_json() {
+                    json_val.render()
+                } else {
+                    String::new()
+                };
+                if !checkpoint_state.is_empty() {
+                    tokio::runtime::Handle::current().block_on(async {
+                        let _ = sqlx::query(
+                            r#"INSERT INTO sessions (id, user_id, title, state)
+                               VALUES (?, ?, ?, ?)
+                               ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP
+                               WHERE sessions.user_id=excluded.user_id"#
+                        )
+                        .bind(&session_id)
+                        .bind(&user_id)
+                        .bind(&checkpoint_title)
+                        .bind(&checkpoint_state)
+                        .execute(&db)
+                        .await;
+                    });
+                    tracing::debug!("Session {} checkpoint saved after run_turn", session_id);
+                }
+            }
+
             if let Some(error) = turn_error {
                 tracing::error!("Chat turn failed for session {}: {}", session_id, error);
                 let _ = tokio::runtime::Handle::current().block_on(async {
@@ -342,7 +399,8 @@ pub async fn chat_completions(
             let _ = sqlx::query(
                 r#"INSERT INTO sessions (id, user_id, title, state)
                    VALUES (?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP"#
+                   ON CONFLICT(id) DO UPDATE SET state=excluded.state, title=excluded.title, updated_at=CURRENT_TIMESTAMP
+                   WHERE sessions.user_id=excluded.user_id"#
             )
             .bind(&session_id)
             .bind(&user_id)
@@ -484,9 +542,6 @@ pub async fn delete_session(
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if result.rows_affected() > 0 {
-        if let Some(sandbox_id) = state.remove_sandbox_id(&user.user_id, &id).await {
-            let _ = state.sandbox_client.kill_sandbox(&sandbox_id).await;
-        }
         Ok(Json(serde_json::json!({"success": true})))
     } else {
         Err(axum::http::StatusCode::NOT_FOUND)
@@ -523,6 +578,22 @@ mod tests {
         );
         assert_eq!(
             policy.required_mode_for("TodoWrite"),
+            PermissionMode::WorkspaceWrite
+        );
+        assert_eq!(
+            policy.required_mode_for("Bash"),
+            PermissionMode::DangerFullAccess
+        );
+        assert_eq!(
+            policy.required_mode_for("ReadFile"),
+            PermissionMode::ReadOnly
+        );
+        assert_eq!(
+            policy.required_mode_for("WriteFile"),
+            PermissionMode::WorkspaceWrite
+        );
+        assert_eq!(
+            policy.required_mode_for("EditFile"),
             PermissionMode::WorkspaceWrite
         );
     }

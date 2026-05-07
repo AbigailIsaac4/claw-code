@@ -1,8 +1,6 @@
 import React from 'react';
-import { Typography } from 'antd';
-import { PaperClipOutlined } from '@ant-design/icons';
-
-const { Text } = Typography;
+import { DownloadOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { ActionIcon, Tag, Text } from '@lobehub/ui';
 
 interface Props {
   files: string[];
@@ -12,20 +10,43 @@ interface Props {
 export const WorkspaceFiles: React.FC<Props> = ({ files, onDownload }) => {
   if (!files || files.length === 0) return null;
 
+  const uniqueFiles = Array.from(new Set(files));
+
   return (
-    <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      {files.map(file => (
-        <div 
-          key={file}
-          onClick={(e) => { e.preventDefault(); onDownload(file); }}
-          style={{ padding: '8px 12px', background: '#fff', border: '1px solid #e3e3e8', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 2px 4px rgba(0,0,0,0.02)', transition: 'all 0.2s' }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = '#1677ff'}
-          onMouseLeave={e => e.currentTarget.style.borderColor = '#e3e3e8'}
-        >
-          <PaperClipOutlined style={{ color: '#1677ff' }} />
-          <Text style={{ fontSize: 13 }}>{file.split('/').pop()}</Text>
-        </div>
-      ))}
+    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        工作区文件
+      </Text>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {uniqueFiles.map((file) => (
+          <div
+            key={file}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 8px',
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderRadius: 10,
+              background: '#fff',
+            }}
+          >
+            <Tag
+              icon={<PaperClipOutlined />}
+              style={{ marginInlineEnd: 0, cursor: 'pointer' }}
+              onClick={() => onDownload(file)}
+            >
+              {file.split('/').pop() || file}
+            </Tag>
+            <ActionIcon
+              icon={DownloadOutlined}
+              onClick={() => onDownload(file)}
+              size="small"
+              title={`下载 ${file}`}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

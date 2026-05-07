@@ -2,10 +2,10 @@ mod auth;
 mod chat;
 mod db;
 mod runtime_bridge;
-mod sandbox_client;
 mod sandbox_routes;
 mod skills;
 mod state;
+mod workspace;
 
 use axum::extract::DefaultBodyLimit;
 use axum::{
