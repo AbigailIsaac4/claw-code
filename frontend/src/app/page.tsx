@@ -5,7 +5,7 @@ import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event
 import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp } from 'antd';
 import { Markdown, DraggablePanel, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
-import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, FileTextOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, FileTextOutlined, FolderOutlined, FileOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -107,6 +107,17 @@ export default function ChatPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
+  // Workspace files for right sidebar
+  interface WorkspaceFile {
+    name: string;
+    path: string;
+    is_dir: boolean;
+    size: number;
+  }
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+  const [workspaceFilesLoading, setWorkspaceFilesLoading] = useState(false);
+  const [workspaceSubPath, setWorkspaceSubPath] = useState<string>('');
+
   // Plan / Execute mode
   const [agentMode, setAgentMode] = useState<'plan' | 'execute'>('execute');
 
@@ -135,6 +146,53 @@ export default function ChatPage() {
       message.error('Failed to load skills');
     } finally {
       setSkillsLoading(false);
+    }
+  };
+
+  const loadWorkspaceFiles = async (subPath?: string) => {
+    if (!activeSessionId) {
+      setWorkspaceFiles([]);
+      return;
+    }
+    setWorkspaceFilesLoading(true);
+    try {
+      const token = localStorage.getItem('claw_token');
+      const params = new URLSearchParams({ session_id: activeSessionId });
+      if (subPath) params.set('path', subPath);
+      const res = await fetch(apiUrl(`/v1/sandbox/files?${params}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWorkspaceFiles(data.files || []);
+      }
+    } catch (err) {
+      console.error('Failed to load workspace files:', err);
+    } finally {
+      setWorkspaceFilesLoading(false);
+    }
+  };
+
+  const downloadWorkspaceFileFromSidebar = async (filePath: string) => {
+    if (!activeSessionId) return;
+    try {
+      const token = localStorage.getItem('claw_token');
+      const params = new URLSearchParams({ session_id: activeSessionId, path: filePath });
+      const res = await fetch(apiUrl(`/v1/sandbox/download?${params}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filePath.split('/').pop() || 'download';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('Failed to download file:', err);
+      message.error('Download failed');
     }
   };
 
@@ -380,6 +438,16 @@ export default function ChatPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skills.length]);
+
+  // Load workspace files when active session changes
+  useEffect(() => {
+    if (activeSessionId) {
+      void loadWorkspaceFiles(workspaceSubPath || undefined);
+    } else {
+      setWorkspaceFiles([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   // Initialize auth state
   useEffect(() => {
@@ -660,6 +728,8 @@ export default function ChatPage() {
             } catch(e) {
               console.warn('Failed to parse tool_call_result:', e);
             }
+            // Refresh workspace files after any tool execution
+            void loadWorkspaceFiles(workspaceSubPath || undefined);
           } else if (ev.event === 'action_required') {
             try {
               const data = JSON.parse(ev.data);
@@ -1031,54 +1101,130 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* 4. Right Sidebar: Workspace & Plan */}
+      {/* 4. Right Sidebar: Workspace & Todos */}
       <DraggablePanel
         placement="right"
         minWidth={200}
         maxWidth={400}
-        defaultSize={{ width: 280 }}
+        defaultSize={{ width: 300 }}
         expand={rightExpand}
         onExpandChange={setRightExpand}
         expandable
         style={{ background: '#ffffff' }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{ padding: '16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text strong style={{ fontSize: 16 }}>Todos</Text>
+        {/* Header */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text strong style={{ fontSize: 15 }}>Workspace</Text>
           <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-          {todos.length === 0 ? (
-            <div style={{ textAlign: 'center', marginTop: 100, padding: '0 24px' }}>
-              <FileTextOutlined style={{ fontSize: 48, color: '#f0f0f0', marginBottom: 16 }} />
-              <Text type="secondary" style={{ fontSize: 13, display: 'block', lineHeight: 1.6 }}>Todo items from the agent will appear here when available.</Text>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {todos.map((todo, idx) => (
-                <div key={idx} style={{ 
-                  padding: '10px 12px', 
-                  background: todo.status === 'completed' ? '#f6ffed' : (todo.status === 'in_progress' ? '#e6f4ff' : '#fafafa'),
-                  border: '1px solid',
-                  borderColor: todo.status === 'completed' ? '#b7eb8f' : (todo.status === 'in_progress' ? '#91caff' : '#f0f0f0'),
-                  borderRadius: 8,
-                  transition: 'all 0.3s'
-                }}>
-                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
-                     <div style={{ marginTop: 2 }}>
-                       {todo.status === 'completed' && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                       {todo.status === 'in_progress' && <ThunderboltOutlined style={{ color: '#1677ff' }} />}
-                       {todo.status === 'pending' && <div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid #d9d9d9' }} />}
-                     </div>
-                     <Text strong style={{ fontSize: 13, textDecoration: todo.status === 'completed' ? 'line-through' : 'none', color: todo.status === 'completed' ? '#888' : 'inherit', lineHeight: 1.4 }}>
-                       {todo.content}
-                     </Text>
-                   </div>
-                   {todo.activeForm && <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 22 }}>{todo.activeForm}</Text>}
+
+        {/* Workspace Files Section */}
+        <div style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', maxHeight: '50%' }}>
+          <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa' }}>
+            <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Files {workspaceSubPath && `/ ${workspaceSubPath}`}
+            </Text>
+            <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => loadWorkspaceFiles(workspaceSubPath || undefined)} loading={workspaceFilesLoading} />
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+            {workspaceSubPath && (
+              <div
+                style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1677ff' }}
+                onClick={() => { setWorkspaceSubPath(''); void loadWorkspaceFiles(); }}
+              >
+                <FolderOutlined /> ..
+              </div>
+            )}
+            {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
+              <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+                <FolderOutlined style={{ fontSize: 32, color: '#f0f0f0', marginBottom: 8 }} />
+                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                  {activeSessionId ? 'No files yet' : 'Select a session'}
+                </Text>
+              </div>
+            ) : (
+              workspaceFiles.map((file, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '6px 16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 13,
+                    borderRadius: 4,
+                    margin: '1px 4px',
+                  }}
+                  className="workspace-file-item"
+                  onClick={() => {
+                    if (file.is_dir) {
+                      setWorkspaceSubPath(file.path);
+                      void loadWorkspaceFiles(file.path);
+                    } else {
+                      downloadWorkspaceFileFromSidebar(file.path);
+                    }
+                  }}
+                >
+                  {file.is_dir ? (
+                    <FolderOutlined style={{ color: '#faad14', fontSize: 14 }} />
+                  ) : (
+                    <FileOutlined style={{ color: '#8c8c8c', fontSize: 14 }} />
+                  )}
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {file.name}
+                  </span>
+                  {!file.is_dir && (
+                    <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                      {file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(1)}K` : `${(file.size / 1048576).toFixed(1)}M`}
+                    </Text>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Todos Section */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '8px 16px', background: '#fafafa' }}>
+            <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Todos
+            </Text>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
+            {todos.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+                <FileTextOutlined style={{ fontSize: 32, color: '#f0f0f0', marginBottom: 8 }} />
+                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>Todo items from the agent will appear here.</Text>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {todos.map((todo, idx) => (
+                  <div key={idx} style={{
+                    padding: '8px 10px',
+                    background: todo.status === 'completed' ? '#f6ffed' : (todo.status === 'in_progress' ? '#e6f4ff' : '#fafafa'),
+                    border: '1px solid',
+                    borderColor: todo.status === 'completed' ? '#b7eb8f' : (todo.status === 'in_progress' ? '#91caff' : '#f0f0f0'),
+                    borderRadius: 6,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                      <div style={{ marginTop: 2, flexShrink: 0 }}>
+                        {todo.status === 'completed' && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 13 }} />}
+                        {todo.status === 'in_progress' && <ThunderboltOutlined style={{ color: '#1677ff', fontSize: 13 }} />}
+                        {todo.status === 'pending' && <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #d9d9d9' }} />}
+                      </div>
+                      <Text style={{ fontSize: 12, textDecoration: todo.status === 'completed' ? 'line-through' : 'none', color: todo.status === 'completed' ? '#888' : 'inherit', lineHeight: 1.4 }}>
+                        {todo.content}
+                      </Text>
+                    </div>
+                    {todo.activeForm && <Text type="secondary" style={{ fontSize: 11, display: 'block', marginLeft: 20, marginTop: 2 }}>{todo.activeForm}</Text>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         </div>
       </DraggablePanel>

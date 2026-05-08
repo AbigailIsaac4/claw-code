@@ -249,6 +249,8 @@ pub async fn chat_completions(
             active_turns.clone(),
             permission_mode,
             workspace_dir,
+            payload.sandbox.clone(),
+            payload.env.clone(),
         );
         let mut prompter = WebPermissionPrompter {
             tx: tx_prompter,
@@ -433,6 +435,19 @@ pub struct ChatRequest {
     pub title: Option<String>,
     /// "plan" = ReadOnly, "execute" = WorkspaceWrite, 默认 = DangerFullAccess
     pub permission_mode: Option<String>,
+    /// Sandbox configuration overrides for this session
+    pub sandbox: Option<SandboxConfigRequest>,
+    /// Environment variables to inject into bash commands for this session
+    pub env: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct SandboxConfigRequest {
+    pub enabled: Option<bool>,
+    pub namespace_restrictions: Option<bool>,
+    pub network_isolation: Option<bool>,
+    pub filesystem_mode: Option<String>,
+    pub allowed_mounts: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]

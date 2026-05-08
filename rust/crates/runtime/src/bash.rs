@@ -21,6 +21,10 @@ pub struct BashCommandInput {
     pub command: String,
     pub timeout: Option<u64>,
     pub description: Option<String>,
+    /// Override working directory for command execution (used by web API to avoid process-global CWD changes).
+    pub cwd: Option<String>,
+    /// Extra environment variables to set for this command (merged with process env).
+    pub env: Option<std::collections::HashMap<String, String>>,
     #[serde(rename = "run_in_background")]
     pub run_in_background: Option<bool>,
     #[serde(rename = "dangerouslyDisableSandbox")]
@@ -69,11 +73,14 @@ pub struct BashCommandOutput {
 
 /// Executes a shell command with the requested sandbox settings.
 pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
-    let cwd = env::current_dir()?;
+    let cwd = match &input.cwd {
+        Some(path) => std::path::PathBuf::from(path),
+        None => env::current_dir()?,
+    };
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
 
     if input.run_in_background.unwrap_or(false) {
-        let mut child = prepare_command(&input.command, &cwd, &sandbox_status, false);
+        let mut child = prepare_command(&input.command, &cwd, &sandbox_status, false, input.env.as_ref());
         let child = child
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -173,7 +180,7 @@ async fn execute_bash_async(
     // Detect and emit ship provenance for git push operations
     detect_and_emit_ship_prepared(&input.command);
 
-    let mut command = prepare_tokio_command(&input.command, &cwd, &sandbox_status, true);
+    let mut command = prepare_tokio_command(&input.command, &cwd, &sandbox_status, true, input.env.as_ref());
 
     let output_result = if let Some(timeout_ms) = input.timeout {
         match timeout(Duration::from_millis(timeout_ms), command.output()).await {
@@ -253,6 +260,7 @@ fn prepare_command(
     cwd: &std::path::Path,
     sandbox_status: &SandboxStatus,
     create_dirs: bool,
+    extra_env: Option<&std::collections::HashMap<String, String>>,
 ) -> Command {
     if create_dirs {
         prepare_sandbox_dirs(cwd);
@@ -263,6 +271,9 @@ fn prepare_command(
         prepared.args(launcher.args);
         prepared.current_dir(cwd);
         prepared.envs(launcher.env);
+        if let Some(env) = extra_env {
+            prepared.envs(env);
+        }
         return prepared;
     }
 
@@ -272,6 +283,9 @@ fn prepare_command(
         prepared.env("HOME", cwd.join(".sandbox-home"));
         prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
     }
+    if let Some(env) = extra_env {
+        prepared.envs(env);
+    }
     prepared
 }
 
@@ -280,6 +294,7 @@ fn prepare_tokio_command(
     cwd: &std::path::Path,
     sandbox_status: &SandboxStatus,
     create_dirs: bool,
+    extra_env: Option<&std::collections::HashMap<String, String>>,
 ) -> TokioCommand {
     if create_dirs {
         prepare_sandbox_dirs(cwd);
@@ -290,6 +305,9 @@ fn prepare_tokio_command(
         prepared.args(launcher.args);
         prepared.current_dir(cwd);
         prepared.envs(launcher.env);
+        if let Some(env) = extra_env {
+            prepared.envs(env);
+        }
         return prepared;
     }
 
@@ -298,6 +316,9 @@ fn prepare_tokio_command(
     if sandbox_status.filesystem_active {
         prepared.env("HOME", cwd.join(".sandbox-home"));
         prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
+    }
+    if let Some(env) = extra_env {
+        prepared.envs(env);
     }
     prepared
 }
@@ -318,6 +339,8 @@ mod tests {
             command: String::from("printf 'hello'"),
             timeout: Some(1_000),
             description: None,
+            cwd: None,
+            env: None,
             run_in_background: Some(false),
             dangerously_disable_sandbox: Some(false),
             namespace_restrictions: Some(false),
@@ -338,6 +361,8 @@ mod tests {
             command: String::from("printf 'hello'"),
             timeout: Some(1_000),
             description: None,
+            cwd: None,
+            env: None,
             run_in_background: Some(false),
             dangerously_disable_sandbox: Some(true),
             namespace_restrictions: None,

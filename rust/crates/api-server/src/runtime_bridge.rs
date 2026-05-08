@@ -16,17 +16,15 @@ use runtime::{
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex as StdMutex, OnceLock,
+    Arc,
 };
 use tokio::sync::{mpsc::Sender, oneshot, Mutex};
 use tools::GlobalToolRegistry;
 
 static ACTION_COUNTER: AtomicUsize = AtomicUsize::new(1);
-static CWD_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
 pub struct WebApiClient {
     pub client: OpenAiCompatClient,
@@ -233,6 +231,8 @@ pub struct WebToolExecutor {
     pub user_id: String,
     pub session_id: String,
     pub workspace_dir: PathBuf,
+    pub sandbox_config: Option<crate::chat::SandboxConfigRequest>,
+    pub session_env: Option<std::collections::HashMap<String, String>>,
     tool_registry: GlobalToolRegistry,
 }
 
@@ -244,6 +244,8 @@ impl WebToolExecutor {
         active_turns: ActiveTurns,
         permission_mode: runtime::PermissionMode,
         workspace_dir: PathBuf,
+        sandbox_config: Option<crate::chat::SandboxConfigRequest>,
+        session_env: Option<std::collections::HashMap<String, String>>,
     ) -> Self {
         Self {
             tx,
@@ -251,6 +253,8 @@ impl WebToolExecutor {
             user_id,
             session_id,
             workspace_dir,
+            sandbox_config,
+            session_env,
             tool_registry: build_tool_registry(permission_mode),
         }
     }
@@ -276,10 +280,25 @@ impl WebToolExecutor {
         let input_value =
             normalize_tool_input_paths(canonical_name, raw_input_value, &self.workspace_dir)?;
 
-        with_workspace_cwd(&self.workspace_dir, || {
-            self.tool_registry.execute(canonical_name, &input_value)
-        })
-        .and_then(|result| result)
+        // Ensure workspace directory exists
+        std::fs::create_dir_all(&self.workspace_dir)
+            .map_err(|error| format!("Failed to create session workspace: {error}"))?;
+
+        // For bash tool, inject workspace as cwd, sandbox config, and env vars from request
+        let input_value = if canonical_name == "bash" {
+            inject_bash_config(
+                input_value,
+                &self.workspace_dir,
+                self.sandbox_config.as_ref(),
+                self.session_env.as_ref(),
+            )?
+        } else {
+            input_value
+        };
+
+        self.tool_registry
+            .execute(canonical_name, &input_value)
+            .map_err(|e| e.to_string())
     }
 
     fn execute_glob_search(&self, input: &Value) -> Result<String, String> {
@@ -458,6 +477,7 @@ fn canonical_tool_name(tool_name: &str) -> &str {
         "read_file" | "ReadFile" => "read_file",
         "write_file" | "WriteFile" => "write_file",
         "edit_file" | "EditFile" => "edit_file",
+        "skills" | "skill" | "Skill" => "Skill",
         other => other,
     }
 }
@@ -491,6 +511,74 @@ fn normalize_tool_input_paths(
             "write_file" => normalize_write_path_field(object, "path", workspace)?,
             "edit_file" => normalize_existing_path_field(object, "path", workspace)?,
             _ => {}
+        }
+    }
+    Ok(input)
+}
+
+/// Inject the session workspace directory, sandbox config, and env vars into bash tool input.
+/// `cwd` replaces the need for process-global `env::set_current_dir()`.
+/// Sandbox fields are injected from the chat request config (not from the LLM).
+/// Env vars are injected from the chat request for per-session runtime environment.
+fn inject_bash_config(
+    mut input: Value,
+    workspace: &Path,
+    sandbox: Option<&crate::chat::SandboxConfigRequest>,
+    session_env: Option<&std::collections::HashMap<String, String>>,
+) -> Result<Value, String> {
+    if let Value::Object(object) = &mut input {
+        if !object.contains_key("cwd") {
+            object.insert(
+                "cwd".to_string(),
+                Value::String(workspace.to_string_lossy().into_owned()),
+            );
+        }
+        if let Some(sandbox) = sandbox {
+            if let Some(enabled) = sandbox.enabled {
+                if !object.contains_key("dangerouslyDisableSandbox") {
+                    object.insert(
+                        "dangerouslyDisableSandbox".to_string(),
+                        Value::Bool(!enabled),
+                    );
+                }
+            }
+            if let Some(ns) = sandbox.namespace_restrictions {
+                if !object.contains_key("namespaceRestrictions") {
+                    object.insert("namespaceRestrictions".to_string(), Value::Bool(ns));
+                }
+            }
+            if let Some(net) = sandbox.network_isolation {
+                if !object.contains_key("isolateNetwork") {
+                    object.insert("isolateNetwork".to_string(), Value::Bool(net));
+                }
+            }
+            if let Some(ref mode) = sandbox.filesystem_mode {
+                if !object.contains_key("filesystemMode") {
+                    object.insert("filesystemMode".to_string(), Value::String(mode.clone()));
+                }
+            }
+            if let Some(ref mounts) = sandbox.allowed_mounts {
+                if !object.contains_key("allowedMounts") {
+                    object.insert(
+                        "allowedMounts".to_string(),
+                        Value::Array(
+                            mounts
+                                .iter()
+                                .map(|m| Value::String(m.clone()))
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+        }
+        if let Some(env_map) = session_env {
+            if !env_map.is_empty() && !object.contains_key("env") {
+                let env_obj: Map<String, Value> = env_map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                    .collect();
+                object.insert("env".to_string(), Value::Object(env_obj));
+            }
         }
     }
     Ok(input)
@@ -572,34 +660,6 @@ fn is_workspace_match(workspace: &Path, candidate: &Path) -> bool {
     canonical_candidate.starts_with(&canonical_root)
 }
 
-fn with_workspace_cwd<R>(workspace: &Path, execute: impl FnOnce() -> R) -> Result<R, String> {
-    let lock = CWD_LOCK.get_or_init(|| StdMutex::new(()));
-    let _guard = lock
-        .lock()
-        .map_err(|_| "workspace execution lock is poisoned".to_string())?;
-
-    std::fs::create_dir_all(workspace)
-        .map_err(|error| format!("Failed to create session workspace: {error}"))?;
-    let original_dir = env::current_dir()
-        .map_err(|error| format!("Failed to inspect current directory: {error}"))?;
-    env::set_current_dir(workspace)
-        .map_err(|error| format!("Failed to enter session workspace: {error}"))?;
-
-    let _restore = CwdRestore { original_dir };
-    Ok(execute())
-}
-
-struct CwdRestore {
-    original_dir: PathBuf,
-}
-
-impl Drop for CwdRestore {
-    fn drop(&mut self) {
-        if let Err(error) = env::set_current_dir(&self.original_dir) {
-            tracing::error!("Failed to restore process cwd after tool execution: {error}");
-        }
-    }
-}
 
 #[derive(Debug, Deserialize)]
 struct GlobSearchInputValue {
@@ -629,6 +689,9 @@ mod tests {
         assert_eq!(canonical_tool_name("EditFile"), "edit_file");
         assert_eq!(canonical_tool_name("Bash"), "bash");
         assert_eq!(canonical_tool_name("WebFetch"), "WebFetch");
+        assert_eq!(canonical_tool_name("skills"), "Skill");
+        assert_eq!(canonical_tool_name("skill"), "Skill");
+        assert_eq!(canonical_tool_name("Skill"), "Skill");
     }
 
     #[test]
@@ -658,6 +721,8 @@ mod tests {
             active_turns,
             PermissionMode::DangerFullAccess,
             workspace.clone(),
+            None,
+            None,
         );
 
         executor
@@ -702,6 +767,8 @@ mod tests {
             active_turns,
             PermissionMode::DangerFullAccess,
             workspace,
+            None,
+            None,
         );
 
         let error = executor
@@ -744,6 +811,8 @@ mod tests {
             active_turns,
             PermissionMode::DangerFullAccess,
             workspace,
+            None,
+            None,
         );
 
         let error = executor

@@ -52,6 +52,7 @@ async fn main() {
         )
         .route("/v1/sandbox/upload", post(sandbox_routes::upload_file))
         .route("/v1/sandbox/download", get(sandbox_routes::download_file))
+        .route("/v1/sandbox/files", get(sandbox_routes::list_workspace_files))
         .route("/v1/skills", get(skills::list_skills))
         // ── Agent platform routes ──
         // Tasks

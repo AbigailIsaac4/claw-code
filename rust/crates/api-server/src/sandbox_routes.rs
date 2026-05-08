@@ -10,6 +10,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
+use serde_json::json;
 
 #[derive(Deserialize)]
 pub struct DownloadQuery {
@@ -137,4 +138,110 @@ pub async fn download_file(
     ];
 
     Ok((headers, decoded))
+}
+
+#[derive(Deserialize)]
+pub struct ListFilesQuery {
+    pub session_id: Option<String>,
+    pub path: Option<String>,
+}
+
+/// List files in a session workspace directory.
+/// Returns a flat list of file entries with name, relative path, size, and type.
+pub async fn list_workspace_files(
+    user: AuthUser,
+    State(_state): State<AppState>,
+    Query(query): Query<ListFilesQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let session_id = require_session_id(&query.session_id)?;
+    let workspace = session_workspace(&user.user_id, &session_id)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+
+    // Resolve subdirectory if specified, otherwise use workspace root
+    let target_dir = if let Some(ref subpath) = query.path {
+        let resolved = resolve_existing_workspace_path(&workspace, subpath)
+            .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+        if resolved.absolute_path.is_dir() {
+            resolved.absolute_path
+        } else {
+            return Ok(Json(json!({
+                "files": [{
+                    "name": resolved.relative_path.rsplit('/').next().unwrap_or(&resolved.relative_path),
+                    "path": resolved.relative_path,
+                    "is_dir": false,
+                    "size": tokio::fs::metadata(&resolved.absolute_path)
+                        .await
+                        .map(|m| m.len())
+                        .unwrap_or(0),
+                }]
+            })));
+        }
+    } else {
+        // Check if workspace exists; if not, return empty
+        if !workspace.exists() {
+            return Ok(Json(json!({"files": []})));
+        }
+        workspace.clone()
+    };
+
+    let mut entries = Vec::new();
+    let mut dir = tokio::fs::read_dir(&target_dir).await.map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read directory: {error}"),
+        )
+    })?;
+
+    while let Some(entry) = dir.next_entry().await.map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read entry: {error}"),
+        )
+    })? {
+        let file_type = entry.file_type().await.map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read file type: {error}"),
+            )
+        })?;
+        let metadata = entry.metadata().await.ok();
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        // Skip hidden files and sandbox internals
+        if name.starts_with('.') {
+            continue;
+        }
+
+        // Compute relative path from workspace root
+        let full_path = entry.path();
+        let relative_path = full_path
+            .strip_prefix(&workspace)
+            .unwrap_or(&full_path)
+            .to_string_lossy()
+            .into_owned()
+            .replace('\\', "/");
+
+        entries.push(json!({
+            "name": name,
+            "path": relative_path,
+            "is_dir": file_type.is_dir(),
+            "size": metadata.map(|m| m.len()).unwrap_or(0),
+        }));
+    }
+
+    // Sort: directories first, then by name
+    entries.sort_by(|a, b| {
+        let a_is_dir = a["is_dir"].as_bool().unwrap_or(false);
+        let b_is_dir = b["is_dir"].as_bool().unwrap_or(false);
+        b_is_dir
+            .cmp(&a_is_dir)
+            .then_with(|| {
+                a["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(b["name"].as_str().unwrap_or(""))
+            })
+    });
+
+    Ok(Json(json!({ "files": entries })))
 }
