@@ -2,6 +2,7 @@ import React from 'react';
 import { Collapse, Typography } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { Highlighter } from '@lobehub/ui';
+import { colors } from '@/styles/tokens';
 
 const { Text } = Typography;
 
@@ -60,12 +61,12 @@ const summarizeInput = (tool: ToolCall): string => {
 
 const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
   if (status === 'running') {
-    return <LoadingOutlined style={{ color: '#1677ff', fontSize: 13 }} spin />;
+    return <LoadingOutlined style={{ color: colors.info, fontSize: 13 }} spin />;
   }
   if (status === 'error') {
-    return <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 13 }} />;
+    return <CloseCircleOutlined style={{ color: colors.error, fontSize: 13 }} />;
   }
-  return <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 13 }} />;
+  return <CheckCircleOutlined style={{ color: colors.success, fontSize: 13 }} />;
 };
 
 export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
@@ -110,40 +111,40 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
               <div style={{ fontSize: 13 }}>
                 {isBash ? (
                   <>
-                    <div style={{ marginBottom: 6, color: '#888', fontSize: 12 }}>Command</div>
+                    <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Command</div>
                     <Highlighter language="bash" style={{ marginBottom: 10 }}>{parsedCommand}</Highlighter>
                     {parsedResult && (
                       <>
-                        <div style={{ marginBottom: 6, color: '#888', fontSize: 12 }}>Output</div>
+                        <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Output</div>
                         <Highlighter language="bash" style={{ maxHeight: 300, overflowY: 'auto' }}>
                           {parsedResult}
                         </Highlighter>
                       </>
                     )}
                     {tool.error && (
-                      <div style={{ color: '#ff4d4f', whiteSpace: 'pre-wrap', marginTop: 8, fontSize: 12 }}>{tool.error}</div>
+                      <div style={{ color: colors.error, whiteSpace: 'pre-wrap', marginTop: 8, fontSize: 12 }}>{tool.error}</div>
                     )}
                   </>
                 ) : (
                   <>
-                    <div style={{ marginBottom: 6, color: '#888', fontSize: 12 }}>Input</div>
+                    <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Input</div>
                     <Highlighter language="json" style={{ marginBottom: 10 }}>{tool.input}</Highlighter>
                     {tool.result && (
                       <>
-                        <div style={{ marginBottom: 6, color: '#888', fontSize: 12 }}>Result</div>
+                        <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Result</div>
                         <Highlighter language="json" style={{ maxHeight: 200, overflowY: 'auto' }}>
                           {tool.result.substring(0, 1000) + (tool.result.length > 1000 ? '\n...[truncated]' : '')}
                         </Highlighter>
                       </>
                     )}
-                    {tool.error && <div style={{ color: '#ff4d4f', marginTop: 8, fontSize: 12 }}>{tool.error}</div>}
+                    {tool.error && <div style={{ color: colors.error, marginTop: 8, fontSize: 12 }}>{tool.error}</div>}
                   </>
                 )}
               </div>
             ),
           };
         })}
-        style={{ background: 'rgba(0,0,0,0.015)', borderRadius: 8, border: '1px solid rgba(0,0,0,0.04)' }}
+        style={{ background: colors.shadow, borderRadius: 8, border: `1px solid ${colors.borderLight}` }}
       />
     </div>
   );

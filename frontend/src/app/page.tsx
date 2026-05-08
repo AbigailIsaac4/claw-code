@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
-import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp } from 'antd';
+import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp, Tooltip } from 'antd';
 import { Markdown, DraggablePanel, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
-import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, FolderOutlined, FileOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOutlined, FileOutlined, ReloadOutlined, CodeOutlined, SearchOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -13,6 +13,7 @@ import { WorkspaceFiles } from '@/components/chat/WorkspaceFiles';
 import { ToolRenderer } from '@/components/chat/ToolRenderer';
 import { ChatInputBox } from '@/components/chat/ChatInputBox';
 import { normalizeHydratedMessages, type HydratedMessage, type HydratedToolCall } from '@/utils/sessionHydration';
+import { colors, radius, fontSize, spacing } from '@/styles/tokens';
 
 const { Text } = Typography;
 
@@ -99,6 +100,8 @@ export default function ChatPage() {
   const { message } = AntdApp.useApp();
 
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [activeToolName, setActiveToolName] = useState<string | null>(null);
+  const [activeToolSummary, setActiveToolSummary] = useState<string | null>(null);
 
   // Workspace files for right sidebar
   interface WorkspaceFile {
@@ -658,6 +661,22 @@ export default function ChatPage() {
           } else if (ev.event === 'tool_call_start') {
             try {
               const data = JSON.parse(ev.data);
+              setActiveToolName(data.tool);
+              // Extract summary from input
+              try {
+                const parsed = typeof data.input === 'string' ? JSON.parse(data.input) : data.input;
+                if (data.tool === 'Bash' && parsed.command) {
+                  setActiveToolSummary(parsed.command.length > 40 ? parsed.command.substring(0, 40) + '...' : parsed.command);
+                } else if (parsed.file_path) {
+                  setActiveToolSummary(String(parsed.file_path).split('/').pop() || parsed.file_path);
+                } else if (parsed.pattern) {
+                  setActiveToolSummary(String(parsed.pattern).substring(0, 40));
+                } else if (parsed.skill) {
+                  setActiveToolSummary(parsed.skill);
+                } else {
+                  setActiveToolSummary(null);
+                }
+              } catch { setActiveToolSummary(null); }
               setSessions(prev => prev.map(s => {
                 if (s.id === sessionId) {
                   const nextMsgs = withAssistantTail(s.messages);
@@ -683,6 +702,8 @@ export default function ChatPage() {
           } else if (ev.event === 'tool_call_result') {
             try {
               const data = JSON.parse(ev.data);
+              setActiveToolName(null);
+              setActiveToolSummary(null);
               setSessions(prev => prev.map(s => {
                 if (s.id === sessionId) {
                   const nextMsgs = withAssistantTail(s.messages);
@@ -736,9 +757,8 @@ export default function ChatPage() {
       });
     } catch (err) {
       if (!streamCompleted) {
-        console.error(err);
-        let errorMsg = err instanceof Error ? err.message : String(err);
-        message.error(`Request failed: ${errorMsg}. Is the API server running?`);
+        console.error('SSE connection error:', err);
+        message.error('Connection failed. Please check your network and try again.');
       }
       streamingSessionRef.current = null;
       setConversationLoading(false);
@@ -746,7 +766,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div style={{ height: '100vh', display: 'flex', backgroundColor: '#fff' }}>
+    <div style={{ height: '100vh', display: 'flex', backgroundColor: colors.bgPrimary }}>
       
       {/* Login modal */}
       <Modal
@@ -794,12 +814,12 @@ export default function ChatPage() {
         expand={leftExpand}
         onExpandChange={setLeftExpand}
         expandable
-        style={{ background: '#f8f6f3', borderRight: '1px solid rgba(0,0,0,0.06)' }}
+        style={{ background: colors.bgSecondary, borderRight: `1px solid ${colors.borderMedium}` }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Space>
-            <Avatar shape="square" size={28} style={{ background: '#eb6f4b', color: '#fff', borderRadius: 8 }} icon={<RobotOutlined />} />
+            <Avatar shape="square" size={28} style={{ background: colors.accent, color: '#fff', borderRadius: 8 }} icon={<RobotOutlined />} />
             <Text strong style={{ fontSize: 16 }}>Agent Workspace</Text>
           </Space>
           <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setLeftExpand(false)} />
@@ -833,17 +853,18 @@ export default function ChatPage() {
                     margin: '2px 12px',
                     borderRadius: 8,
                     cursor: 'pointer',
-                    background: isActive ? 'rgba(0,0,0,0.03)' : 'transparent',
+                    background: isActive ? colors.bgActive : 'transparent',
+                    borderLeft: isActive ? `3px solid ${colors.accent}` : '3px solid transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    transition: 'all 0.3s ease',
+                    transition: 'all 0.2s ease',
                   }}
-                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(0,0,0,0.03)' }}
+                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = colors.bgHover }}
                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
                 >
                   <Space style={{ overflow: 'hidden', flex: 1 }}>
-                    <Text type="secondary" style={{ color: isActive ? '#eb6f4b' : '#aaa' }}>#</Text>
+                    <Text type="secondary" style={{ color: isActive ? colors.accent : colors.textTertiary }}>#</Text>
                     <Text ellipsis style={{ width: 140, color: isActive ? '#000' : '#666', fontWeight: isActive ? 600 : 400 }}>
                       {item.title}
                     </Text>
@@ -869,14 +890,11 @@ export default function ChatPage() {
             })}
           </div>
         </div>
-        <div style={{ padding: '16px' }}>
-          <Button type="text" size="small" icon={<QuestionCircleOutlined />} style={{ color: '#888' }} onClick={() => setShowSettings(true)} />
-        </div>
         </div>
       </DraggablePanel>
 
       {/* 3. Main Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', background: '#fff' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', background: colors.bgPrimary }}>
         {/* Header */}
         <Header 
           logo={
@@ -886,8 +904,31 @@ export default function ChatPage() {
           }
           actions={
             <Space style={{ whiteSpace: 'nowrap' }}>
-              <ActionIcon 
-                icon={ShareAltOutlined} 
+              <Popconfirm
+                title="Clear all messages?"
+                description="This cannot be undone."
+                onConfirm={() => {
+                  if (activeSessionId) {
+                    updateSessionMessages(activeSessionId, []);
+                  }
+                }}
+                okText="Clear"
+                cancelText="Cancel"
+              >
+                <ActionIcon icon={DeleteOutlined} title="Clear chat" />
+              </Popconfirm>
+              <ActionIcon
+                icon={ThunderboltOutlined}
+                title="Skills"
+                onClick={() => setShowSkillsModal(true)}
+              />
+              <ActionIcon
+                icon={SettingOutlined}
+                title="Settings"
+                onClick={() => setShowSettings(true)}
+              />
+              <ActionIcon
+                icon={ShareAltOutlined}
                 title="Copy share link"
                 onClick={async () => {
                   try {
@@ -897,7 +938,7 @@ export default function ChatPage() {
                   } catch {
                     message.error('Failed to copy share link');
                   }
-                }} 
+                }}
               />
             </Space>
           }
@@ -907,8 +948,37 @@ export default function ChatPage() {
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
           <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {(!activeSession || activeSession.messages.length === 0) && (
-               <div style={{ textAlign: 'center', marginTop: 100 }}>
-                 <Typography.Title level={3} style={{ color: '#ccc' }}>Start a new conversation</Typography.Title>
+               <div style={{ textAlign: 'center', marginTop: 60 }}>
+                 <RobotOutlined style={{ fontSize: 48, color: colors.accent, marginBottom: 16 }} />
+                 <Typography.Title level={3} style={{ color: '#333', marginBottom: 4 }}>Claw Agent</Typography.Title>
+                 <Text type="secondary" style={{ display: 'block', marginBottom: 40, fontSize: 14 }}>
+                   I can write code, run commands, analyze files, and more. Try a prompt below to get started.
+                 </Text>
+                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 520, margin: '0 auto' }}>
+                   {[
+                     { icon: <CodeOutlined />, title: 'Write Code', desc: 'Generate functions, scripts, or full modules', prompt: 'Help me write a Python script that reads a CSV file and computes summary statistics.' },
+                     { icon: <SearchOutlined />, title: 'Analyze Code', desc: 'Understand architecture, find bugs, review PRs', prompt: 'Analyze the current project structure and explain the main entry points and data flow.' },
+                     { icon: <FileTextOutlined />, title: 'Process Files', desc: 'Parse, transform, and generate documents', prompt: 'Read the README.md in the current directory and create a concise summary.' },
+                     { icon: <ThunderboltOutlined />, title: 'Run Commands', desc: 'Execute shell commands and automate tasks', prompt: 'List all running processes and check disk usage on this machine.' },
+                   ].map((item, idx) => (
+                     <div
+                       key={idx}
+                       onClick={() => { setInput(item.prompt); }}
+                       style={{
+                         display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
+                         padding: '16px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+                         background: '#fafafa', border: '1px solid #f0f0f0',
+                         transition: 'all 0.2s ease',
+                       }}
+                       onMouseEnter={e => { e.currentTarget.style.borderColor = colors.accent; e.currentTarget.style.background = colors.bgPrimary; }}
+                       onMouseLeave={e => { e.currentTarget.style.borderColor = colors.border; e.currentTarget.style.background = colors.bgTertiary; }}
+                     >
+                       <span style={{ fontSize: 20, color: colors.accent }}>{item.icon}</span>
+                       <Text strong style={{ fontSize: 14 }}>{item.title}</Text>
+                       <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.4 }}>{item.desc}</Text>
+                     </div>
+                   ))}
+                 </div>
                </div>
             )}
             
@@ -926,7 +996,7 @@ export default function ChatPage() {
                     } : {
                       avatar: <RobotOutlined />,
                       title: 'Agent',
-                      backgroundColor: '#eb6f4b',
+                      backgroundColor: colors.accent,
                     },
                     extra: {
                       toolCalls: msg.toolCalls,
@@ -968,7 +1038,7 @@ export default function ChatPage() {
                                     borderRadius: 8,
                                   }}
                                 >
-                                  <PaperClipOutlined style={{ color: '#1677ff', fontSize: 16 }} />
+                                  <PaperClipOutlined style={{ color: colors.info, fontSize: 16 }} />
                                   <Text strong style={{ fontSize: 13 }}>
                                     {displayName}
                                   </Text>
@@ -989,7 +1059,7 @@ export default function ChatPage() {
                     return (
                       <div style={{ position: 'relative' }}>
                         <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
-                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} style={{ position: 'absolute', top: -4, right: -32, opacity: 0.35 }} />
+                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} style={{ position: 'absolute', top: 4, right: 4, opacity: 0.3 }} />
                       </div>
                     );
                   },
@@ -1007,7 +1077,7 @@ export default function ChatPage() {
                       <div style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
                         <ThinkingBlock content={parsed?.thinkingBlock} />
                         <Markdown>{parsed?.cleanContent || ''}</Markdown>
-                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopyAssistant} style={{ position: 'absolute', top: -4, right: -8, opacity: 0.35 }} />
+                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopyAssistant} style={{ position: 'absolute', top: 4, right: 4, opacity: 0.3 }} />
                       </div>
                     );
                   }
@@ -1043,7 +1113,14 @@ export default function ChatPage() {
             {loading && (
                <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 8 }}>
                   <LoadingDots size={4} variant="typing" />
-                  <LobeText type="secondary" italic>Agent is thinking...</LobeText>
+                  {activeToolName ? (
+                    <LobeText type="secondary" italic>
+                      Running <Text strong style={{ fontWeight: 600 }}>{activeToolName}</Text>
+                      {activeToolSummary && <span> — {activeToolSummary}</span>}
+                    </LobeText>
+                  ) : (
+                    <LobeText type="secondary" italic>Agent is thinking...</LobeText>
+                  )}
                </div>
             )}
           </div>
@@ -1089,18 +1166,18 @@ export default function ChatPage() {
         expand={rightExpand}
         onExpandChange={setRightExpand}
         expandable
-        style={{ background: '#ffffff' }}
+        style={{ background: colors.bgPrimary }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Header */}
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${colors.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text strong style={{ fontSize: 15 }}>Workspace</Text>
           <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
         </div>
 
         {/* Workspace Files Section */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa' }}>
+          <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colors.bgTertiary }}>
             <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Files {workspaceSubPath && `/ ${workspaceSubPath}`}
             </Text>
@@ -1117,15 +1194,15 @@ export default function ChatPage() {
             )}
             {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
               <div style={{ textAlign: 'center', padding: '24px 16px' }}>
-                <FolderOutlined style={{ fontSize: 32, color: '#f0f0f0', marginBottom: 8 }} />
+                <FolderOutlined style={{ fontSize: 32, color: colors.border, marginBottom: 8 }} />
                 <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
                   {activeSessionId ? 'No files yet' : 'Select a session'}
                 </Text>
               </div>
             ) : (
               workspaceFiles.map((file, idx) => (
+                <Tooltip key={idx} title={file.is_dir ? 'Open folder' : 'Click to download'} placement="left">
                 <div
-                  key={idx}
                   style={{
                     padding: '6px 16px',
                     cursor: 'pointer',
@@ -1147,9 +1224,9 @@ export default function ChatPage() {
                   }}
                 >
                   {file.is_dir ? (
-                    <FolderOutlined style={{ color: '#faad14', fontSize: 14 }} />
+                    <FolderOutlined style={{ color: colors.warning, fontSize: 14 }} />
                   ) : (
-                    <FileOutlined style={{ color: '#8c8c8c', fontSize: 14 }} />
+                    <FileOutlined style={{ color: colors.textSecondary, fontSize: 14 }} />
                   )}
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {file.name}
@@ -1160,6 +1237,7 @@ export default function ChatPage() {
                     </Text>
                   )}
                 </div>
+                </Tooltip>
               ))
             )}
           </div>
@@ -1181,7 +1259,7 @@ export default function ChatPage() {
         width={500}
       >
         <p style={{ marginTop: 16 }}>The agent needs approval before running this action.</p>
-        <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', padding: 16, borderRadius: 8, marginBottom: 24, marginTop: 16 }}>
+        <div style={{ background: colors.bgTertiary, border: `1px solid ${colors.border}`, padding: 16, borderRadius: 8, marginBottom: 24, marginTop: 16 }}>
           <p style={{ margin: '0 0 8px' }}><strong>Tool:</strong> <Text code>{actionReq?.tool}</Text></p>
           <p style={{ margin: '0 0 8px' }}><strong>Required mode:</strong> <Text type="danger">{actionReq?.required_mode}</Text></p>
           <p style={{ margin: 0 }}><strong>Reason:</strong> <Text type="secondary">{actionReq?.message}</Text></p>
@@ -1207,9 +1285,9 @@ export default function ChatPage() {
           <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>Manage MCP server integrations for the agent.</Text>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {plugins.map(item => (
-              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f9f9f9', borderRadius: 8, border: '1px solid #eee' }}>
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: colors.bgTertiary, borderRadius: 8, border: `1px solid ${colors.border}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <ApiOutlined style={{ fontSize: 24, color: item.active ? '#1677ff' : '#ccc' }} />
+                  <ApiOutlined style={{ fontSize: 24, color: item.active ? colors.info : colors.textTertiary }} />
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Text strong>{item.name}</Text>
@@ -1249,7 +1327,7 @@ export default function ChatPage() {
       {/* Skills Modal */}
       <Modal
         title={
-          <Space><ApiOutlined /> <span>Agent Skills</span></Space>
+          <Space><ThunderboltOutlined /> <span>Agent Skills</span></Space>
         }
         open={showSkillsModal}
         onCancel={() => setShowSkillsModal(false)}
@@ -1273,9 +1351,9 @@ export default function ChatPage() {
             ) : skills.filter(s => s.name.toLowerCase().includes(skillSearch.toLowerCase()) || s.description.toLowerCase().includes(skillSearch.toLowerCase())).length === 0 ? (
               <div style={{ textAlign: 'center', padding: 40 }}><Text type="secondary">No matching skills found.</Text></div>
             ) : skills.filter(s => s.name.toLowerCase().includes(skillSearch.toLowerCase()) || s.description.toLowerCase().includes(skillSearch.toLowerCase())).map(item => (
-              <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: '#f8f9fa', borderRadius: 12, border: '1px solid rgba(0,0,0,0.04)' }}>
+              <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: colors.bgCode, borderRadius: 12, border: `1px solid ${colors.borderLight}` }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flex: 1 }}>
-                  <Avatar style={{ backgroundColor: '#e6f4ff', color: '#1677ff' }} icon={<RobotOutlined />} />
+                  <Avatar style={{ backgroundColor: colors.infoBg, color: colors.info }} icon={<RobotOutlined />} />
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Text strong style={{ fontSize: 15 }}>{item.name}</Text>

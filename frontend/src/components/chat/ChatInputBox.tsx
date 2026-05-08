@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { Text } from '@lobehub/ui';
 import { Button, Input, Popover, Typography } from 'antd';
+import { colors } from '@/styles/tokens';
 
 const { TextArea } = Input;
 const { Text: AntText } = Typography;
@@ -43,10 +44,10 @@ export const ChatInputBox: React.FC<Props> = ({
     <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
-          background: '#fff',
+          background: colors.bgPrimary,
           borderRadius: 12,
           border: '1px solid #e8e8e8',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+          boxShadow: colors.shadowMedium,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -76,16 +77,16 @@ export const ChatInputBox: React.FC<Props> = ({
             marginTop: 12,
           }}
         >
-          <div style={{ display: 'flex', gap: 12, color: '#888' }}>
+          <div style={{ display: 'flex', gap: 12, color: colors.textSecondary }}>
             <PaperClipOutlined
               style={{ fontSize: 18, cursor: 'pointer', transition: 'color 0.2s' }}
               title="上传文件到当前会话工作区"
               onClick={() => fileInputRef.current?.click()}
               onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#333';
+                e.currentTarget.style.color = colors.textPrimary;
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.color = '#888';
+                e.currentTarget.style.color = colors.textSecondary;
               }}
             />
             <Popover
@@ -113,7 +114,7 @@ export const ChatInputBox: React.FC<Props> = ({
                           marginBottom: 4,
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#f0f0f0';
+                          e.currentTarget.style.background = colors.border;
                         }}
                         onMouseLeave={(e) => {
                           e.currentTarget.style.background = 'transparent';
@@ -125,7 +126,7 @@ export const ChatInputBox: React.FC<Props> = ({
                         <div
                           style={{
                             fontWeight: 500,
-                            color: '#eb6f4b',
+                            color: colors.accent,
                             marginBottom: 4,
                             fontSize: 13,
                           }}
@@ -135,7 +136,7 @@ export const ChatInputBox: React.FC<Props> = ({
                         <div
                           style={{
                             fontSize: 12,
-                            color: '#888',
+                            color: colors.textSecondary,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -155,10 +156,10 @@ export const ChatInputBox: React.FC<Props> = ({
                 style={{ fontSize: 18, cursor: 'pointer', transition: 'color 0.2s' }}
                 title="打开技能列表"
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = '#333';
+                  e.currentTarget.style.color = colors.textPrimary;
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = '#888';
+                  e.currentTarget.style.color = colors.textSecondary;
                 }}
               />
             </Popover>
@@ -177,7 +178,7 @@ export const ChatInputBox: React.FC<Props> = ({
             onClick={onSend}
             disabled={isEmpty || loading}
             style={{
-              background: isEmpty ? '#f0f0f0' : '#eb6f4b',
+              background: isEmpty ? colors.border : colors.accent,
               color: isEmpty ? '#bfbfbf' : '#fff',
               border: 'none',
             }}
@@ -193,7 +194,7 @@ export const ChatInputBox: React.FC<Props> = ({
           gap: 6,
         }}
       >
-        <FolderOpenOutlined style={{ fontSize: 14, color: '#999' }} />
+        <FolderOpenOutlined style={{ fontSize: 14, color: colors.textSecondary }} />
         <Text type="secondary" style={{ fontSize: 12 }}>
           当前会话工作区
         </Text>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { DownloadOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { colors } from '@/styles/tokens';
 import { ActionIcon, Tag, Text } from '@lobehub/ui';
 
 interface Props {
@@ -26,9 +27,9 @@ export const WorkspaceFiles: React.FC<Props> = ({ files, onDownload }) => {
               alignItems: 'center',
               gap: 6,
               padding: '6px 8px',
-              border: '1px solid rgba(0,0,0,0.08)',
+              border: `1px solid ${colors.borderDark}`,
               borderRadius: 10,
-              background: '#fff',
+              background: colors.bgPrimary,
             }}
           >
             <Tag
