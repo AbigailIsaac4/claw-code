@@ -101,7 +101,10 @@ impl ApiClient for WebApiClient {
             ),
             tool_choice: Some(api::ToolChoice::Auto),
             stream: true,
-            max_tokens: 32000,
+            max_tokens: std::env::var("MAX_OUTPUT_TOKENS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(16384),
             ..Default::default()
         };
 

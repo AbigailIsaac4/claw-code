@@ -1,44 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
-interface AuthState {
-  token: string | null;
-  showLogin: boolean;
-  email: string;
-  password: string;
-  loginLoading: boolean;
+interface UseAuthCallbacks {
+  onLoginSuccess?: (token: string, fullName: string) => void;
+  onLogout?: () => void;
+  onError?: (msg: string) => void;
 }
 
-interface AuthActions {
-  setEmail: (email: string) => void;
-  setPassword: (password: string) => void;
-  handleLogin: () => Promise<void>;
-  handleLogout: () => void;
-  setShowLogin: (show: boolean) => void;
-}
-
-export function useAuth(onLoginSuccess: (token: string) => void): AuthState & AuthActions {
+export function useAuth(callbacks: UseAuthCallbacks = {}) {
   const [token, setToken] = useState<string | null>(null);
   const [showLogin, setShowLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Initialize auth state from localStorage
-  useEffect(() => {
-    const savedToken = localStorage.getItem('claw_token');
-    if (savedToken) {
-      setToken(savedToken);
-      setShowLogin(false);
-      onLoginSuccess(savedToken);
+  const handleLogin = useCallback(async () => {
+    if (!email || !password) {
+      callbacks.onError?.('Enter email and password');
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleLogin = async () => {
-    if (!email || !password) return;
     setLoginLoading(true);
     try {
       const res = await fetch(apiUrl('/v1/auth/login'), {
@@ -51,33 +33,35 @@ export function useAuth(onLoginSuccess: (token: string) => void): AuthState & Au
         localStorage.setItem('claw_token', data.token);
         setToken(data.token);
         setShowLogin(false);
-        onLoginSuccess(data.token);
+        callbacks.onLoginSuccess?.(data.token, data.full_name);
       } else {
-        throw new Error(data.message || 'Login failed');
+        callbacks.onError?.(data.message || 'Login failed. Check your credentials.');
       }
-    } catch (err) {
-      throw err;
+    } catch {
+      callbacks.onError?.('Network error');
     } finally {
       setLoginLoading(false);
     }
-  };
+  }, [email, password, callbacks]);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('claw_token');
     setToken(null);
     setShowLogin(true);
-  };
+    callbacks.onLogout?.();
+  }, [callbacks]);
 
   return {
     token,
+    setToken,
     showLogin,
+    setShowLogin,
     email,
-    password,
-    loginLoading,
     setEmail,
+    password,
     setPassword,
+    loginLoading,
     handleLogin,
     handleLogout,
-    setShowLogin,
   };
 }

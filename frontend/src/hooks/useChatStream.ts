@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
 import type { HydratedMessage, HydratedToolCall } from '@/utils/sessionHydration';
+import { normalizeHydratedMessages } from '@/utils/sessionHydration';
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
@@ -19,12 +20,20 @@ interface Session {
 
 type SessionSummary = Pick<Session, 'id' | 'title'>;
 
+interface ActionRequest {
+  action_id: string;
+  tool?: string;
+  required_mode?: string;
+  message?: string;
+}
+
 interface UseChatStreamProps {
   token: string | null;
   sessions: Session[];
   activeSessionId: string;
   activeSession: Session | undefined;
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
+  setActiveSessionId: (id: string) => void;
   streamingSessionRef: React.MutableRefObject<string | null>;
   loadingRef: React.MutableRefObject<boolean>;
   setLoading: (loading: boolean) => void;
@@ -34,6 +43,8 @@ interface UseChatStreamProps {
   loadWorkspaceFiles: (subPath?: string) => Promise<void>;
   workspaceSubPath: string;
   agentMode: 'plan' | 'execute';
+  onError?: (msg: string) => void;
+  onActionRequired?: (req: ActionRequest) => void;
 }
 
 export function useChatStream({
@@ -42,6 +53,7 @@ export function useChatStream({
   activeSessionId,
   activeSession,
   setSessions,
+  setActiveSessionId,
   streamingSessionRef,
   loadingRef,
   setLoading,
@@ -51,21 +63,28 @@ export function useChatStream({
   loadWorkspaceFiles,
   workspaceSubPath,
   agentMode,
+  onError,
+  onActionRequired,
 }: UseChatStreamProps) {
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [activeToolSummary, setActiveToolSummary] = useState<string | null>(null);
 
-  const sendMessage = useCallback(async (input: string) => {
-    if (!input.trim() || loadingRef.current || !activeSession || !token) return;
+  const setConversationLoading = useCallback((value: boolean) => {
+    loadingRef.current = value;
+    setLoading(value);
+  }, [loadingRef, setLoading]);
+
+  const sendMessage = useCallback(async (finalInput: string) => {
+    if (!finalInput.trim() || loadingRef.current || !activeSession || !token) return;
 
     const sessionId = activeSessionId;
-    const userMsg: Message = { id: generateId(), role: 'user', content: input };
+    const userMsg: Message = { id: generateId(), role: 'user', content: finalInput };
 
     const messagesAfterUser = normalizeHydratedMessages([...activeSession.messages, userMsg]);
     updateSessionMessages(sessionId, messagesAfterUser);
 
     streamingSessionRef.current = sessionId;
-    setLoading(true);
+    setConversationLoading(true);
 
     const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '' };
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
@@ -101,7 +120,7 @@ export function useChatStream({
           if (ev.event === 'done' || ev.data === '[DONE]') {
             streamCompleted = true;
             streamingSessionRef.current = null;
-            setLoading(false);
+            setConversationLoading(false);
             setActiveToolName(null);
             setActiveToolSummary(null);
             void loadSessionDetail(sessionId, token, sessions);
@@ -115,16 +134,25 @@ export function useChatStream({
                 setSessions(prev => prev.map(s =>
                   s.id === sessionId ? { ...s, id: data.session_id } : s
                 ));
+                setActiveSessionId(data.session_id);
+                streamingSessionRef.current = data.session_id;
               }
             } catch {}
             return;
           }
           if (ev.event === 'runtime_error') {
+            if (ev.data.includes('当前会话已有一轮对话正在处理中，请等待上一轮结束后再发送。')) {
+              streamCompleted = true;
+              streamingSessionRef.current = null;
+              void loadSessionDetail(sessionId, token, sessions);
+              return;
+            }
             streamCompleted = true;
             streamingSessionRef.current = null;
-            setLoading(false);
+            setConversationLoading(false);
             setActiveToolName(null);
             setActiveToolSummary(null);
+            onError?.(ev.data || 'The agent run failed.');
             return;
           }
           if (ev.event === 'message') {
@@ -215,6 +243,13 @@ export function useChatStream({
               console.warn('Failed to parse tool_call_result:', e);
             }
             void loadWorkspaceFiles(workspaceSubPath || undefined);
+          } else if (ev.event === 'action_required') {
+            try {
+              const data = JSON.parse(ev.data);
+              onActionRequired?.(data);
+            } catch(e) {
+              console.warn('Failed to parse action_required:', e);
+            }
           }
         },
         onclose() {
@@ -222,7 +257,7 @@ export function useChatStream({
             throw new Error('SSE connection closed before completion');
           }
           streamingSessionRef.current = null;
-          setLoading(false);
+          setConversationLoading(false);
           setActiveToolName(null);
           setActiveToolSummary(null);
         },
@@ -231,7 +266,7 @@ export function useChatStream({
             console.error('SSE Error:', err);
           }
           streamingSessionRef.current = null;
-          setLoading(false);
+          setConversationLoading(false);
           setActiveToolName(null);
           setActiveToolSummary(null);
           throw err;
@@ -240,23 +275,18 @@ export function useChatStream({
     } catch (err) {
       if (!streamCompleted) {
         console.error('SSE connection error:', err);
+        onError?.('Connection failed. Please check your network and try again.');
       }
       streamingSessionRef.current = null;
-      setLoading(false);
+      setConversationLoading(false);
       setActiveToolName(null);
       setActiveToolSummary(null);
     }
-  }, [token, sessions, activeSessionId, activeSession, setSessions, streamingSessionRef, loadingRef, setLoading, withAssistantTail, updateSessionMessages, loadSessionDetail, loadWorkspaceFiles, workspaceSubPath, agentMode]);
+  }, [token, sessions, activeSessionId, activeSession, setSessions, setActiveSessionId, streamingSessionRef, loadingRef, setLoading, withAssistantTail, updateSessionMessages, loadSessionDetail, loadWorkspaceFiles, workspaceSubPath, agentMode, onError, onActionRequired, setConversationLoading]);
 
   return {
     activeToolName,
     activeToolSummary,
     sendMessage,
   };
-}
-
-// Helper to normalize hydrated messages
-function normalizeHydratedMessages(messages: Message[], options?: { activeTurn?: boolean; generateId?: () => string }): Message[] {
-  // This is a simplified version - the actual implementation should match the existing one
-  return messages;
 }

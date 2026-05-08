@@ -15,7 +15,7 @@ use crate::permissions::{
 use crate::session::{ContentBlock, ConversationMessage, Session};
 use crate::usage::{TokenUsage, UsageTracker};
 
-const DEFAULT_AUTO_COMPACTION_INPUT_TOKENS_THRESHOLD: u32 = 100_000;
+const DEFAULT_AUTO_COMPACTION_INPUT_TOKENS_THRESHOLD: u32 = 80_000;
 const AUTO_COMPACTION_THRESHOLD_ENV_VAR: &str = "CLAUDE_CODE_AUTO_COMPACT_INPUT_TOKENS";
 
 /// Fully assembled request payload sent to the upstream model client.

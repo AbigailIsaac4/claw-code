@@ -18,7 +18,7 @@ export interface Session {
 
 type SessionSummary = Pick<Session, 'id' | 'title'>;
 
-export function useSessions(token: string | null) {
+export function useSessions(token: string | null, onAuthError?: () => void) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
   const loadingRef = useRef(false);
@@ -173,6 +173,7 @@ export function useSessions(token: string | null) {
         headers: { Authorization: `Bearer ${authToken}` }
       });
       if (!res.ok) {
+        if (res.status === 401) onAuthError?.();
         return;
       }
       const data = await res.json();
