@@ -2975,6 +2975,19 @@ fn discover_definition_roots(cwd: &Path, leaf: &str) -> Vec<(DefinitionSource, P
 fn discover_skill_roots(cwd: &Path) -> Vec<SkillRoot> {
     let mut roots = Vec::new();
 
+    // Extra skills root for web mode where CWD is session workspace, not project root
+    if let Ok(skills_root) = env::var("CLAW_SKILLS_ROOT") {
+        let path = PathBuf::from(&skills_root);
+        if path.exists() {
+            push_unique_skill_root(
+                &mut roots,
+                DefinitionSource::UserClawConfigHome,
+                path,
+                SkillOrigin::SkillsDir,
+            );
+        }
+    }
+
     for ancestor in cwd.ancestors() {
         push_unique_skill_root(
             &mut roots,

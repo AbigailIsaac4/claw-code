@@ -139,11 +139,11 @@ export default function ChatPage() {
     setSkillsLoading(true);
     try {
       const res = await fetch(apiUrl('/v1/skills'));
+      if (!res.ok) return;
       const data = await res.json();
       if (data.status === 'success') setSkills(data.data);
     } catch (err) {
       console.error('Failed to load skills:', err);
-      message.error('Failed to load skills');
     } finally {
       setSkillsLoading(false);
     }
@@ -623,6 +623,8 @@ export default function ChatPage() {
             setConversationLoading(false);
             // Reload session to get final persisted state
             void loadSessionDetail(sessionId, token, sessions);
+            // Refresh workspace files to show any new output files
+            void loadWorkspaceFiles(workspaceSubPath || undefined);
             return;
           }
           if (ev.event === 'session_created') {

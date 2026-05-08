@@ -125,6 +125,7 @@ sysctl -w kernel.unprivileged_userns_clone=1
 | `OPENAI_MODEL_NAME` | `qwen` | Model name sent to provider |
 | `DATABASE_URL` | `sqlite:./data/claw.db` | SQLite database path |
 | `JWT_SECRET` | (random per start) | JWT signing secret |
+| `CLAW_SKILLS_ROOT` | auto-detected | Skills directory path (auto-detects `assets/skills/` from CWD) |
 
 ## Docker Compose Example
 

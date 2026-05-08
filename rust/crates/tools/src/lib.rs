@@ -3270,6 +3270,14 @@ struct SkillLookupRoot {
 fn skill_lookup_roots() -> Vec<SkillLookupRoot> {
     let mut roots = Vec::new();
 
+    // Extra skills root for web mode where CWD is session workspace, not project root
+    if let Ok(skills_root) = std::env::var("CLAW_SKILLS_ROOT") {
+        let path = std::path::PathBuf::from(&skills_root);
+        if path.exists() {
+            push_skill_lookup_root(&mut roots, path, SkillLookupOrigin::SkillsDir);
+        }
+    }
+
     if let Ok(cwd) = std::env::current_dir() {
         push_project_skill_lookup_roots(&mut roots, &cwd);
     }

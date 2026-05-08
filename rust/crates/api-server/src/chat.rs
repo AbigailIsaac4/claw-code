@@ -283,6 +283,10 @@ pub async fn chat_completions(
             "The current working directory is this session's isolated local workspace. Use relative file paths for uploaded and generated files; do not assume a /workspace absolute directory exists."
                 .to_string(),
         ];
+        // Inject available skills listing so the LLM knows what skills it can load
+        if let Some(skills_prompt) = crate::skills::build_skills_system_prompt() {
+            system_prompts.push(skills_prompt);
+        }
         if permission_mode == runtime::PermissionMode::ReadOnly {
             system_prompts.push(
                 "你当前处于 **Plan 模式（只读）**。\n\

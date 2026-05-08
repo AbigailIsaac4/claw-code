@@ -29,6 +29,22 @@ async fn main() {
     // 加载 .env 环境变量
     dotenvy::dotenv().ok();
 
+    // 设置全局 skills 搜索根目录，确保 web 模式下 session workspace 之外的 skills 可被发现
+    // 优先使用环境变量 CLAW_SKILLS_ROOT，否则自动检测项目根目录下的 assets/skills
+    if std::env::var("CLAW_SKILLS_ROOT").is_err() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let candidates = [
+            cwd.join("assets").join("skills"),
+            cwd.join("..").join("assets").join("skills"),
+        ];
+        for candidate in &candidates {
+            if candidate.exists() {
+                std::env::set_var("CLAW_SKILLS_ROOT", candidate);
+                break;
+            }
+        }
+    }
+
     // 初始化数据库 (3.1)
     let pool = db::init_db().await.expect("Failed to initialize database");
 

@@ -64,7 +64,7 @@ export const ChatInputBox: React.FC<Props> = ({
           }}
           placeholder="从任务或问题开始... 按 Shift + Enter 换行"
           autoSize={{ minRows: 2, maxRows: 8 }}
-          bordered={false}
+          variant="borderless"
           style={{ padding: 0, resize: 'none', fontSize: 14, boxShadow: 'none' }}
         />
 
