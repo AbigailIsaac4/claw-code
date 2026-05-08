@@ -25,9 +25,9 @@ register() {
         -d "{\"email\":\"${email}\",\"password\":\"${password}\",\"full_name\":\"${full_name}\"}")
 
     case "$http_code" in
-        200) echo "  OK   ${email} (${full_name})"; ((success++)) ;;
-        400) echo "  SKIP ${email} (already exists)"; ((skipped++)) ;;
-        *)   echo "  FAIL ${email} [HTTP ${http_code}]"; ((failed++)) ;;
+        200) echo "  OK   ${email} (${full_name})"; success=$((success + 1)) ;;
+        400) echo "  SKIP ${email} (already exists)"; skipped=$((skipped + 1)) ;;
+        *)   echo "  FAIL ${email} [HTTP ${http_code}]"; failed=$((failed + 1)) ;;
     esac
 }
 
