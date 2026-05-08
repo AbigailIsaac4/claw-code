@@ -197,6 +197,7 @@ pub async fn chat_completions(
     let tx_clone = tx.clone();
     let tx_tool = tx.clone();
     let tx_prompter = tx.clone();
+    let tx_session_event = tx.clone();
     let pending_actions = state.pending_actions.clone();
     let db = state.db.clone();
     let active_turns = state.active_turns.clone();
@@ -211,6 +212,13 @@ pub async fn chat_completions(
             return Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new());
         }
     };
+
+    // 通知前端实际使用的 session_id（尤其是前端未传时后端自动生成的情况）
+    let session_id_for_event = session_id.clone();
+    tokio::task::spawn(async move {
+        let sse_data = serde_json::json!({"session_id": session_id_for_event}).to_string();
+        let _ = tx_session_event.send(Event::default().event("session_created").data(sse_data)).await;
+    });
 
     // 在 spawn_blocking 中运行，因为 run_turn 会大量发生线程阻塞（调用 tokio::block_in_place）
     tokio::task::spawn_blocking(move || {

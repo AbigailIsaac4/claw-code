@@ -553,6 +553,35 @@ export default function ChatPage() {
             streamCompleted = true;
             streamingSessionRef.current = null;
             setConversationLoading(false);
+            // Reload session to get final persisted state
+            void loadSessionDetail(sessionId, token, sessions);
+            return;
+          }
+          if (ev.event === 'session_created') {
+            try {
+              const data = JSON.parse(ev.data);
+              if (data.session_id && data.session_id !== sessionId) {
+                // Backend generated a different session_id - update frontend state
+                setSessions(prev => prev.map(s =>
+                  s.id === sessionId ? { ...s, id: data.session_id } : s
+                ));
+                setActiveSessionId(data.session_id);
+                streamingSessionRef.current = data.session_id;
+              }
+            } catch {}
+            return;
+          }
+          if (ev.event === 'runtime_error') {
+            if (ev.data.includes('当前会话已有一轮对话正在处理中，请等待上一轮结束后再发送。')) {
+              streamCompleted = true;
+              streamingSessionRef.current = null;
+              void loadSessionDetail(sessionId, token, sessions);
+              return;
+            }
+            streamCompleted = true;
+            streamingSessionRef.current = null;
+            setConversationLoading(false);
+            message.error(ev.data || 'The agent run failed.');
             return;
           }
           if (ev.event === 'message') {
@@ -638,17 +667,6 @@ export default function ChatPage() {
             } catch(e) {
               console.warn('Failed to parse action_required:', e);
             }
-          } else if (ev.event === 'runtime_error') {
-            if (ev.data.includes('\u5f53\u524d\u4f1a\u8bdd\u5df2\u6709\u4e00\u8f6e\u5bf9\u8bdd\u6b63\u5728\u5904\u7406\u4e2d\uff0c\u8bf7\u7b49\u5f85\u4e0a\u4e00\u8f6e\u7ed3\u675f\u540e\u518d\u53d1\u9001\u3002')) {
-              streamCompleted = true;
-              streamingSessionRef.current = null;
-              void loadSessionDetail(sessionId, token, sessions);
-              return;
-            }
-            streamCompleted = true;
-            streamingSessionRef.current = null;
-            setConversationLoading(false);
-            message.error(ev.data || 'The agent run failed.');
           }
         },
         onclose() {

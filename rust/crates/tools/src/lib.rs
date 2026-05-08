@@ -68,6 +68,23 @@ fn global_worker_registry() -> &'static WorkerRegistry {
     REGISTRY.get_or_init(WorkerRegistry::new)
 }
 
+/// Public accessors for platform API integration.
+pub fn task_registry() -> &'static TaskRegistry {
+    global_task_registry()
+}
+
+pub fn worker_registry() -> &'static WorkerRegistry {
+    global_worker_registry()
+}
+
+pub fn team_registry() -> &'static TeamRegistry {
+    global_team_registry()
+}
+
+pub fn cron_registry() -> &'static CronRegistry {
+    global_cron_registry()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolManifestEntry {
     pub name: String,

@@ -1,3 +1,4 @@
+mod agent_routes;
 mod auth;
 mod chat;
 mod db;
@@ -52,6 +53,37 @@ async fn main() {
         .route("/v1/sandbox/upload", post(sandbox_routes::upload_file))
         .route("/v1/sandbox/download", get(sandbox_routes::download_file))
         .route("/v1/skills", get(skills::list_skills))
+        // ── Agent platform routes ──
+        // Tasks
+        .route("/v1/tasks", get(agent_routes::list_tasks).post(agent_routes::create_task))
+        .route(
+            "/v1/tasks/:id",
+            get(agent_routes::get_task).delete(agent_routes::remove_task),
+        )
+        .route("/v1/tasks/:id/stop", post(agent_routes::stop_task))
+        .route("/v1/tasks/:id/output", get(agent_routes::get_task_output))
+        // Workers
+        .route("/v1/workers", post(agent_routes::create_worker))
+        .route("/v1/workers/:id", get(agent_routes::get_worker))
+        .route("/v1/workers/:id/prompt", post(agent_routes::send_worker_prompt))
+        .route("/v1/workers/:id/trust", post(agent_routes::resolve_worker_trust))
+        .route("/v1/workers/:id/restart", post(agent_routes::restart_worker))
+        .route("/v1/workers/:id/terminate", post(agent_routes::terminate_worker))
+        // Teams
+        .route("/v1/teams", get(agent_routes::list_teams).post(agent_routes::create_team))
+        .route(
+            "/v1/teams/:id",
+            get(agent_routes::get_team).delete(agent_routes::delete_team),
+        )
+        // Crons
+        .route("/v1/crons", get(agent_routes::list_crons).post(agent_routes::create_cron))
+        .route(
+            "/v1/crons/:id",
+            get(agent_routes::get_cron).delete(agent_routes::delete_cron),
+        )
+        .route("/v1/crons/:id/disable", post(agent_routes::disable_cron))
+        // Platform stats
+        .route("/v1/stats", get(agent_routes::platform_stats))
         .layer(cors)
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit
         .with_state(state);

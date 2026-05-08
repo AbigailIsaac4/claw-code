@@ -117,64 +117,84 @@ impl ApiClient for WebApiClient {
 
                 let mut pending_tool: Option<(String, String, String)> = None;
 
-                while let Ok(Some(event)) = stream.next_event().await {
-                    match event {
-                        api::StreamEvent::MessageStart(start) => {
-                            for block in start.message.content {
-                                match block {
-                                    api::OutputContentBlock::Text { text } if !text.is_empty() => {
-                                        self.push_text_delta(&mut events, text).await;
+                loop {
+                    match stream.next_event().await {
+                        Ok(Some(event)) => match event {
+                            api::StreamEvent::MessageStart(start) => {
+                                for block in start.message.content {
+                                    match block {
+                                        api::OutputContentBlock::Text { text } if !text.is_empty() => {
+                                            self.push_text_delta(&mut events, text).await;
+                                        }
+                                        api::OutputContentBlock::ToolUse { id, name, input } => {
+                                            let input = tool_input_to_string(input);
+                                            push_active_assistant_tool_use(
+                                                &self.active_turns,
+                                                &self.user_id,
+                                                &self.session_id,
+                                                id.clone(),
+                                                name.clone(),
+                                                input.clone(),
+                                            )
+                                            .await;
+                                            events.push(AssistantEvent::ToolUse { id, name, input });
+                                        }
+                                        _ => {}
                                     }
-                                    api::OutputContentBlock::ToolUse { id, name, input } => {
-                                        let input = tool_input_to_string(input);
-                                        push_active_assistant_tool_use(
-                                            &self.active_turns,
-                                            &self.user_id,
-                                            &self.session_id,
-                                            id.clone(),
-                                            name.clone(),
-                                            input.clone(),
-                                        )
-                                        .await;
-                                        events.push(AssistantEvent::ToolUse { id, name, input });
-                                    }
-                                    _ => {}
                                 }
                             }
-                        }
-                        api::StreamEvent::ContentBlockStart(start) => {
-                            if let api::OutputContentBlock::ToolUse { id, name, input } =
-                                start.content_block
-                            {
-                                pending_tool = Some((id, name, tool_input_to_string(input)));
+                            api::StreamEvent::ContentBlockStart(start) => {
+                                if let api::OutputContentBlock::ToolUse { id, name, input } =
+                                    start.content_block
+                                {
+                                    pending_tool = Some((id, name, tool_input_to_string(input)));
+                                }
                             }
-                        }
-                        api::StreamEvent::ContentBlockDelta(delta) => match delta.delta {
-                            api::ContentBlockDelta::TextDelta { text } if !text.is_empty() => {
-                                self.push_text_delta(&mut events, text).await;
-                            }
-                            api::ContentBlockDelta::InputJsonDelta { partial_json } => {
-                                if let Some((_, _, ref mut input)) = pending_tool {
-                                    input.push_str(&partial_json);
+                            api::StreamEvent::ContentBlockDelta(delta) => match delta.delta {
+                                api::ContentBlockDelta::TextDelta { text } if !text.is_empty() => {
+                                    self.push_text_delta(&mut events, text).await;
+                                }
+                                api::ContentBlockDelta::InputJsonDelta { partial_json } => {
+                                    if let Some((_, _, ref mut input)) = pending_tool {
+                                        input.push_str(&partial_json);
+                                    }
+                                }
+                                _ => {}
+                            },
+                            api::StreamEvent::ContentBlockStop(_) => {
+                                if let Some((id, name, input)) = pending_tool.take() {
+                                    push_active_assistant_tool_use(
+                                        &self.active_turns,
+                                        &self.user_id,
+                                        &self.session_id,
+                                        id.clone(),
+                                        name.clone(),
+                                        input.clone(),
+                                    )
+                                    .await;
+                                    events.push(AssistantEvent::ToolUse { id, name, input });
                                 }
                             }
                             _ => {}
                         },
-                        api::StreamEvent::ContentBlockStop(_) => {
-                            if let Some((id, name, input)) = pending_tool.take() {
-                                push_active_assistant_tool_use(
-                                    &self.active_turns,
-                                    &self.user_id,
-                                    &self.session_id,
-                                    id.clone(),
-                                    name.clone(),
-                                    input.clone(),
+                        Ok(None) => break,
+                        Err(error) => {
+                            tracing::error!(
+                                "LLM stream error for session {}: {}",
+                                self.session_id,
+                                error
+                            );
+                            let error_msg = format!("LLM stream error: {error}");
+                            let _ = self
+                                .tx
+                                .send(
+                                    Event::default()
+                                        .event("runtime_error")
+                                        .data(&error_msg),
                                 )
                                 .await;
-                                events.push(AssistantEvent::ToolUse { id, name, input });
-                            }
+                            return Err(RuntimeError::new(error_msg));
                         }
-                        _ => {}
                     }
                 }
 
