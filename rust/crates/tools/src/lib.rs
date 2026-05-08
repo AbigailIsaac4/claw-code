@@ -3197,7 +3197,18 @@ fn execute_todo_write(input: TodoWriteInput) -> Result<TodoWriteOutput, String> 
 }
 
 fn execute_skill(input: SkillInput) -> Result<SkillOutput, String> {
-    let skill_path = resolve_skill_path(&input.skill)?;
+    let skill_path = match resolve_skill_path(&input.skill) {
+        Ok(path) => path,
+        Err(e) => {
+            // On failure, list available skill names so the LLM can pick the right one
+            let available = list_available_skill_names();
+            if available.is_empty() {
+                return Err(e);
+            }
+            let names = available.join(", ");
+            return Err(format!("{e}\nAvailable skills: {names}"));
+        }
+    };
     let prompt = std::fs::read_to_string(&skill_path).map_err(|error| error.to_string())?;
     let description = parse_skill_description(&prompt);
 
@@ -3208,6 +3219,34 @@ fn execute_skill(input: SkillInput) -> Result<SkillOutput, String> {
         description,
         prompt,
     })
+}
+
+/// Collect all available skill names from lookup roots (for error suggestions).
+fn list_available_skill_names() -> Vec<String> {
+    let mut names = Vec::new();
+    for root in skill_lookup_roots() {
+        if !root.path.exists() {
+            continue;
+        }
+        if let Ok(entries) = std::fs::read_dir(&root.path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    if path.join("SKILL.md").is_file() && !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+    }
+    names.sort();
+    names.truncate(30); // Cap at 30 to keep error message manageable
+    names
 }
 
 fn validate_todos(todos: &[TodoItem]) -> Result<(), String> {
