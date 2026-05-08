@@ -1,6 +1,6 @@
 import React from 'react';
 import { Collapse, Typography } from 'antd';
-import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { Highlighter } from '@lobehub/ui';
 import { colors } from '@/styles/tokens';
 
@@ -26,6 +26,7 @@ const toolIcon = (name: string) => {
   if (n === 'grep') return '🔍';
   if (n === 'glob') return '📂';
   if (n === 'skill') return '⚡';
+  if (n === 'todowrite') return '📋';
   return '🔧';
 };
 
@@ -55,8 +56,48 @@ const summarizeInput = (tool: ToolCall): string => {
     if (n === 'skill' && parsed.skill) {
       return parsed.skill;
     }
+    if (n === 'todowrite' && parsed.todos) {
+      const count = parsed.todos.length;
+      const done = parsed.todos.filter((t: { status: string }) => t.status === 'completed').length;
+      return `${done}/${count} tasks`;
+    }
   } catch {}
   return '';
+};
+
+const TodoWriteRenderer: React.FC<{ input: string; status: string }> = ({ input, status }) => {
+  let todos: { content: string; status: string; activeForm?: string }[] = [];
+  try {
+    const parsed = JSON.parse(input);
+    todos = parsed.todos || [];
+  } catch {}
+
+  if (todos.length === 0) {
+    return <Text type="secondary" style={{ fontSize: 12 }}>No tasks</Text>;
+  }
+
+  const statusIcon = (s: string) => {
+    if (s === 'completed') return <CheckCircleOutlined style={{ color: colors.success, fontSize: 13 }} />;
+    if (s === 'in_progress') return <LoadingOutlined style={{ color: colors.info, fontSize: 13 }} spin />;
+    return <MinusCircleOutlined style={{ color: colors.textTertiary, fontSize: 13 }} />;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {todos.map((todo, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          {statusIcon(todo.status)}
+          <span style={{
+            textDecoration: todo.status === 'completed' ? 'line-through' : 'none',
+            color: todo.status === 'completed' ? colors.textTertiary : '#000',
+            fontWeight: todo.status === 'in_progress' ? 600 : 400,
+          }}>
+            {todo.content}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 };
 
 const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
@@ -94,6 +135,8 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
             } catch {}
           }
 
+          const isTodoWrite = tool.name.toLowerCase() === 'todowrite';
+
           return {
             key: String(idx),
             label: (
@@ -109,7 +152,9 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
             ),
             children: (
               <div style={{ fontSize: 13 }}>
-                {isBash ? (
+                {isTodoWrite ? (
+                  <TodoWriteRenderer input={tool.input} status={tool.status} />
+                ) : isBash ? (
                   <>
                     <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Command</div>
                     <Highlighter language="bash" style={{ marginBottom: 10 }}>{parsedCommand}</Highlighter>
