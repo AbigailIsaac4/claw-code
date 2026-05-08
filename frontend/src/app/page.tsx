@@ -5,7 +5,7 @@ import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event
 import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp } from 'antd';
 import { Markdown, DraggablePanel, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
-import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ThunderboltOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, FileTextOutlined, FolderOutlined, FileOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, FolderOutlined, FileOutlined, ReloadOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -48,12 +48,6 @@ const parseUploadedWorkspacePrompt = (content: string) => {
 };
 
 type ToolCall = HydratedToolCall;
-
-interface Todo {
-  content: string;
-  activeForm: string;
-  status: 'pending' | 'in_progress' | 'completed';
-}
 
 type Message = HydratedMessage;
 
@@ -104,7 +98,6 @@ export default function ChatPage() {
   const streamingSessionRef = useRef<string | null>(null);
   const { message } = AntdApp.useApp();
 
-  const [todos, setTodos] = useState<Todo[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
   // Workspace files for right sidebar
@@ -343,8 +336,6 @@ export default function ChatPage() {
         // Hydrate session messages into UI-friendly messages and tool calls.
         const messages: Message[] = [];
         let currentAssistant: Message | null = null;
-        let sessionTodos: Todo[] = [];
-
         for (const msg of (state.messages || [])) {
           const role = msg.role === 'user' ? 'user' : (msg.role === 'assistant' ? 'assistant' : 'tool');
           
@@ -366,12 +357,6 @@ export default function ChatPage() {
               if (block.type === 'text') {
                 currentAssistant.content += block.text;
               } else if (block.type === 'tool_use') {
-                if (block.name === 'TodoWrite') {
-                  try {
-                    const inputArgs = typeof block.input === 'string' ? JSON.parse(block.input) : block.input;
-                    if (inputArgs.todos) sessionTodos = inputArgs.todos;
-                  } catch {}
-                }
                 currentAssistant.toolCalls!.push({
                   id: block.id || generateId(),
                   name: block.name,
@@ -411,9 +396,7 @@ export default function ChatPage() {
           messages: loadedMessages,
           active: isActiveTurn,
         };
-        
-        setTodos(sessionTodos);
-        
+
         setSessions(prev => {
           const list = prev.length > 0 ? prev : sessionList.map(s => ({ id: s.id, title: s.title, messages: [] }));
           if (!list.some(s => s.id === id)) {
@@ -675,12 +658,6 @@ export default function ChatPage() {
           } else if (ev.event === 'tool_call_start') {
             try {
               const data = JSON.parse(ev.data);
-              if (data.tool === 'TodoWrite') {
-                try {
-                  const rawInput = typeof data.input === 'string' ? JSON.parse(data.input) : data.input;
-                  if (rawInput.todos) setTodos(rawInput.todos);
-                } catch {}
-              }
               setSessions(prev => prev.map(s => {
                 if (s.id === sessionId) {
                   const nextMsgs = withAssistantTail(s.messages);
@@ -1103,7 +1080,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* 4. Right Sidebar: Workspace & Todos */}
+      {/* 4. Right Sidebar: Workspace */}
       <DraggablePanel
         placement="right"
         minWidth={200}
@@ -1122,7 +1099,7 @@ export default function ChatPage() {
         </div>
 
         {/* Workspace Files Section */}
-        <div style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', maxHeight: '50%' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa' }}>
             <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Files {workspaceSubPath && `/ ${workspaceSubPath}`}
@@ -1188,46 +1165,6 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Todos Section */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '8px 16px', background: '#fafafa' }}>
-            <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Todos
-            </Text>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px' }}>
-            {todos.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px 16px' }}>
-                <FileTextOutlined style={{ fontSize: 32, color: '#f0f0f0', marginBottom: 8 }} />
-                <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>Todo items from the agent will appear here.</Text>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {todos.map((todo, idx) => (
-                  <div key={idx} style={{
-                    padding: '8px 10px',
-                    background: todo.status === 'completed' ? '#f6ffed' : (todo.status === 'in_progress' ? '#e6f4ff' : '#fafafa'),
-                    border: '1px solid',
-                    borderColor: todo.status === 'completed' ? '#b7eb8f' : (todo.status === 'in_progress' ? '#91caff' : '#f0f0f0'),
-                    borderRadius: 6,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                      <div style={{ marginTop: 2, flexShrink: 0 }}>
-                        {todo.status === 'completed' && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 13 }} />}
-                        {todo.status === 'in_progress' && <ThunderboltOutlined style={{ color: '#1677ff', fontSize: 13 }} />}
-                        {todo.status === 'pending' && <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #d9d9d9' }} />}
-                      </div>
-                      <Text style={{ fontSize: 12, textDecoration: todo.status === 'completed' ? 'line-through' : 'none', color: todo.status === 'completed' ? '#888' : 'inherit', lineHeight: 1.4 }}>
-                        {todo.content}
-                      </Text>
-                    </div>
-                    {todo.activeForm && <Text type="secondary" style={{ fontSize: 11, display: 'block', marginLeft: 20, marginTop: 2 }}>{todo.activeForm}</Text>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
         </div>
       </DraggablePanel>
 
