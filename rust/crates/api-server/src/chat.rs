@@ -199,6 +199,7 @@ pub async fn chat_completions(
     let tx_prompter = tx.clone();
     let tx_session_event = tx.clone();
     let pending_actions = state.pending_actions.clone();
+    let pending_questions = state.pending_questions.clone();
     let db = state.db.clone();
     let active_turns = state.active_turns.clone();
     let workspace_dir = match session_workspace(&user_id, &session_id) {
@@ -251,6 +252,7 @@ pub async fn chat_completions(
             workspace_dir,
             payload.sandbox.clone(),
             payload.env.clone(),
+            pending_questions,
         );
         let mut prompter = WebPermissionPrompter {
             tx: tx_prompter,
@@ -484,6 +486,26 @@ pub async fn resolve_action(
         "Action resolved"
     } else {
         "Action not found or already resolved"
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ResolveQuestionRequest {
+    pub question_id: String,
+    pub answer: String,
+}
+
+pub async fn resolve_question(
+    State(state): State<AppState>,
+    Json(payload): Json<ResolveQuestionRequest>,
+) -> &'static str {
+    let mut questions = state.pending_questions.lock().await;
+
+    if let Some(sender) = questions.remove(&payload.question_id) {
+        let _ = sender.send(payload.answer);
+        "Question resolved"
+    } else {
+        "Question not found or already resolved"
     }
 }
 

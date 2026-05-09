@@ -45,6 +45,7 @@ interface UseChatStreamProps {
   agentMode: 'plan' | 'execute';
   onError?: (msg: string) => void;
   onActionRequired?: (req: ActionRequest) => void;
+  onQuestionRequired?: (data: { question_id: string; question: string; options?: string[] }) => void;
 }
 
 export function useChatStream({
@@ -65,6 +66,7 @@ export function useChatStream({
   agentMode,
   onError,
   onActionRequired,
+  onQuestionRequired,
 }: UseChatStreamProps) {
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [activeToolSummary, setActiveToolSummary] = useState<string | null>(null);
@@ -253,6 +255,13 @@ export function useChatStream({
               onActionRequired?.(data);
             } catch(e) {
               console.warn('Failed to parse action_required:', e);
+            }
+          } else if (ev.event === 'question_required') {
+            try {
+              const data = JSON.parse(ev.data);
+              onQuestionRequired?.(data);
+            } catch(e) {
+              console.warn('Failed to parse question_required:', e);
             }
           }
         },

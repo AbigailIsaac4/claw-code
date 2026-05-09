@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp, Tooltip } from 'antd';
+import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp, Tooltip, Radio } from 'antd';
 import { Markdown, DraggablePanel, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
 import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOutlined, FileOutlined, ReloadOutlined, CodeOutlined, SearchOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
@@ -98,6 +98,12 @@ export default function ChatPage() {
   // --- Local UI state (declared before useChatStream to avoid used-before-declaration) ---
   const [input, setInput] = useState('');
   const [actionReq, setActionReq] = useState<ActionRequest | null>(null);
+  const [questionReq, setQuestionReq] = useState<{
+    question_id: string;
+    question: string;
+    options?: string[];
+  } | null>(null);
+  const [questionAnswer, setQuestionAnswer] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [agentMode, setAgentMode] = useState<'plan' | 'execute'>('execute');
@@ -114,6 +120,7 @@ export default function ChatPage() {
     workspaceSubPath, agentMode,
     onError: (msg) => message.error(msg),
     onActionRequired: (data) => setActionReq(data),
+    onQuestionRequired: (data) => { setQuestionReq(data); setQuestionAnswer(''); },
   });
 
   const [showSettings, setShowSettings] = useState(false);
@@ -195,6 +202,27 @@ export default function ChatPage() {
         }),
       });
       setActionReq(null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleResolveQuestion = async () => {
+    if (!questionReq || !token || !questionAnswer.trim()) return;
+    try {
+      await fetch(apiUrl('/v1/chat/resolve_question'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          question_id: questionReq.question_id,
+          answer: questionAnswer.trim(),
+        }),
+      });
+      setQuestionReq(null);
+      setQuestionAnswer('');
     } catch (e) {
       console.error(e);
     }
@@ -745,6 +773,47 @@ export default function ChatPage() {
         <Space style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
           <Button danger onClick={() => handleResolveAction(false)}>Reject</Button>
           <Button type="primary" onClick={() => handleResolveAction(true)}>Approve</Button>
+        </Space>
+      </Modal>
+
+      {/* Agent Question Modal */}
+      <Modal
+        title={<Space><span style={{ fontSize: 20 }}>Agent Question</span></Space>}
+        open={!!questionReq}
+        closable={false}
+        keyboard={false}
+        mask={{ closable: false }}
+        footer={null}
+        width={500}
+      >
+        <p style={{ marginTop: 16 }}>{questionReq?.question}</p>
+        {questionReq?.options && questionReq.options.length > 0 ? (
+          <Radio.Group
+            value={questionAnswer}
+            onChange={(e) => setQuestionAnswer(e.target.value)}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}
+          >
+            {questionReq.options.map((opt, i) => (
+              <Radio key={i} value={opt}>{opt}</Radio>
+            ))}
+          </Radio.Group>
+        ) : (
+          <Input.TextArea
+            value={questionAnswer}
+            onChange={(e) => setQuestionAnswer(e.target.value)}
+            placeholder="Type your answer..."
+            rows={3}
+            style={{ marginTop: 16 }}
+          />
+        )}
+        <Space style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', marginTop: 16 }}>
+          <Button
+            type="primary"
+            disabled={!questionAnswer.trim()}
+            onClick={handleResolveQuestion}
+          >
+            Submit
+          </Button>
         </Space>
       </Modal>
 

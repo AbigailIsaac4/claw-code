@@ -349,6 +349,24 @@ where
                 return Err(error);
             }
 
+            // Pre-compaction: only on first iteration to avoid compacting
+            // current-turn messages the model hasn't processed yet.
+            if iterations == 1 {
+                let estimated_tokens = estimate_session_tokens(&self.session);
+                if estimated_tokens >= self.auto_compaction_input_tokens_threshold as usize {
+                    let result = compact_session(
+                        &self.session,
+                        CompactionConfig {
+                            max_estimated_tokens: 0,
+                            ..CompactionConfig::default()
+                        },
+                    );
+                    if result.removed_message_count > 0 {
+                        self.session = result.compacted_session;
+                    }
+                }
+            }
+
             let request = ApiRequest {
                 system_prompt: self.system_prompt.clone(),
                 messages: self.session.messages.clone(),
@@ -742,9 +760,7 @@ fn build_assistant_message(
         ));
     }
     if blocks.is_empty() {
-        blocks.push(ContentBlock::Text {
-            text: "⚠️ The assistant returned an empty response. This may occur if the model is confused or context is too large. Please adjust your prompt.".to_string()
-        });
+        return Err(RuntimeError::new("assistant stream produced no content"));
     }
 
     Ok((

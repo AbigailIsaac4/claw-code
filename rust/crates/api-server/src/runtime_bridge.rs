@@ -236,6 +236,7 @@ pub struct WebToolExecutor {
     pub workspace_dir: PathBuf,
     pub sandbox_config: Option<crate::chat::SandboxConfigRequest>,
     pub session_env: Option<std::collections::HashMap<String, String>>,
+    pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     tool_registry: GlobalToolRegistry,
 }
 
@@ -249,6 +250,7 @@ impl WebToolExecutor {
         workspace_dir: PathBuf,
         sandbox_config: Option<crate::chat::SandboxConfigRequest>,
         session_env: Option<std::collections::HashMap<String, String>>,
+        pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     ) -> Self {
         Self {
             tx,
@@ -258,19 +260,27 @@ impl WebToolExecutor {
             workspace_dir,
             sandbox_config,
             session_env,
+            pending_questions,
             tool_registry: build_tool_registry(permission_mode),
         }
     }
 
     fn execute_registry_tool(&self, tool_name: &str, input: &str) -> Result<String, String> {
         let normalized_input = if input.trim().is_empty() { "{}" } else { input };
-        let raw_input_value: Value = serde_json::from_str(normalized_input).map_err(|error| {
-            tracing::error!(
-                "Failed to parse ToolUse input. Raw input: {:?}",
-                normalized_input
-            );
-            format!("Invalid input JSON: {error}")
-        })?;
+        let raw_input_value: Value = match serde_json::from_str(normalized_input) {
+            Ok(v) => v,
+            Err(_) => {
+                // Attempt to repair common model output malformations
+                let repaired = repair_json(normalized_input);
+                serde_json::from_str(&repaired).map_err(|error| {
+                    tracing::error!(
+                        "Failed to parse ToolUse input. Raw input: {:?}",
+                        normalized_input
+                    );
+                    format!("Invalid input JSON: {error}")
+                })?
+            }
+        };
 
         let canonical_name = canonical_tool_name(tool_name);
         if canonical_name == "glob_search" {
@@ -299,9 +309,68 @@ impl WebToolExecutor {
             input_value
         };
 
+        // Intercept AskUserQuestion to route through SSE instead of stdin
+        if canonical_name == "AskUserQuestion" {
+            return self.execute_ask_user_question(&input_value);
+        }
+
         self.tool_registry
             .execute(canonical_name, &input_value)
             .map_err(|e| e.to_string())
+    }
+
+    fn execute_ask_user_question(&self, input: &Value) -> Result<String, String> {
+        let question = input
+            .get("question")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Agent has a question")
+            .to_string();
+        let options: Option<Vec<String>> = input.get("options").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
+
+        let question_id = format!("q_{}", ACTION_COUNTER.fetch_add(1, Ordering::Relaxed));
+        let (tx, rx) = oneshot::channel();
+
+        // Register sender
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.pending_questions.lock().await.insert(question_id.clone(), tx);
+            });
+        });
+
+        // Send SSE event
+        let sse_data = serde_json::to_string(&serde_json::json!({
+            "question_id": question_id,
+            "question": question,
+            "options": options,
+        }))
+        .unwrap_or_default();
+
+        let send_result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.tx
+                    .send(Event::default().event("question_required").data(sse_data))
+                    .await
+            })
+        });
+
+        if send_result.is_err() {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    self.pending_questions.lock().await.remove(&question_id);
+                });
+            });
+            return Err("Client disconnected".to_string());
+        }
+
+        // Wait for user response
+        match rx.blocking_recv() {
+            Ok(answer) => Ok(answer),
+            Err(_) => Err("Question channel closed or dropped".to_string()),
+        }
     }
 
     fn execute_glob_search(&self, input: &Value) -> Result<String, String> {
@@ -472,6 +541,95 @@ fn tool_input_to_string(input: Value) -> String {
     } else {
         input.to_string()
     }
+}
+
+/// Attempt to repair common JSON malformations from model output.
+fn repair_json(input: &str) -> String {
+    let mut s = input.trim().to_string();
+
+    // Fix double-quoted keys: ""key"" → "key"
+    // Pattern: two consecutive quotes followed by non-quote chars and two consecutive quotes
+    let mut result = String::with_capacity(s.len());
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
+            // Start of double-quote — emit single quote
+            result.push('"');
+            i += 2;
+            // Skip until closing double-quote pair
+            while i < chars.len() {
+                if i + 1 < chars.len() && chars[i] == '"' && chars[i + 1] == '"' {
+                    // Check if this is end of key (followed by :) or end of value
+                    let rest: String = chars[i + 2..].iter().collect();
+                    if rest.trim_start().starts_with(':') || rest.trim_start().starts_with(',') || rest.trim_start().starts_with('}') || rest.trim_start().is_empty() {
+                        result.push('"');
+                        i += 2;
+                        break;
+                    } else {
+                        // Interior double-quotes — keep one
+                        result.push('"');
+                        i += 2;
+                    }
+                } else {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    s = result;
+
+    // Try parsing as-is first
+    if serde_json::from_str::<serde_json::Value>(&s).is_ok() {
+        return s;
+    }
+
+    // Fix truncated JSON: count open vs close braces/brackets and close them
+    let mut brace_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in s.chars() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match ch {
+            '{' => brace_depth += 1,
+            '}' => brace_depth -= 1,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -= 1,
+            _ => {}
+        }
+    }
+    // Close any unclosed string
+    if in_string {
+        s.push('"');
+    }
+    // Close brackets first, then braces
+    for _ in 0..bracket_depth.max(0) {
+        s.push(']');
+    }
+    for _ in 0..brace_depth.max(0) {
+        s.push('}');
+    }
+
+    s
 }
 
 fn canonical_tool_name(tool_name: &str) -> &str {
@@ -726,6 +884,7 @@ mod tests {
             workspace.clone(),
             None,
             None,
+            Arc::new(Mutex::new(HashMap::new())),
         );
 
         executor
@@ -772,6 +931,7 @@ mod tests {
             workspace,
             None,
             None,
+            Arc::new(Mutex::new(HashMap::new())),
         );
 
         let error = executor
@@ -816,6 +976,7 @@ mod tests {
             workspace,
             None,
             None,
+            Arc::new(Mutex::new(HashMap::new())),
         );
 
         let error = executor

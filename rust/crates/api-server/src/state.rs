@@ -16,6 +16,7 @@ pub struct AppState {
     pub db: sqlx::SqlitePool,
     pub qwen_client: OpenAiCompatClient,
     pub pending_actions: Arc<Mutex<HashMap<String, oneshot::Sender<PermissionPromptDecision>>>>,
+    pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     pub active_turns: ActiveTurns,
 }
 
@@ -34,6 +35,7 @@ impl AppState {
             db,
             qwen_client,
             pending_actions: Arc::new(Mutex::new(HashMap::new())),
+            pending_questions: Arc::new(Mutex::new(HashMap::new())),
             active_turns: Arc::new(Mutex::new(HashMap::new())),
         }
     }

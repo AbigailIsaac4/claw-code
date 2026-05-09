@@ -61,6 +61,7 @@ async fn main() {
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/chat/completions", post(chat::chat_completions))
         .route("/v1/chat/resolve_action", post(chat::resolve_action))
+        .route("/v1/chat/resolve_question", post(chat::resolve_question))
         .route("/v1/sessions", get(chat::list_sessions))
         .route(
             "/v1/sessions/:id",
