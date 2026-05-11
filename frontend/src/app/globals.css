@@ -19,3 +19,13 @@ body {
   background: rgba(0, 0, 0, 0.04);
   transition: background 0.15s ease;
 }
+
+.msg-hover-copy .copy-btn {
+  opacity: 0 !important;
+}
+.msg-hover-copy:hover .copy-btn {
+  opacity: 0.5 !important;
+}
+.msg-hover-copy:hover .copy-btn:hover {
+  opacity: 0.9 !important;
+}

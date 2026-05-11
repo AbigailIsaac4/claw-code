@@ -545,9 +545,9 @@ export default function ChatPage() {
                       );
                     }
                     return (
-                      <div style={{ position: 'relative' }}>
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
-                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} style={{ position: 'absolute', top: 4, right: 4, opacity: 0.3 }} />
+                      <div className="msg-hover-copy" style={{ position: 'relative' }}>
+                        <div style={{ whiteSpace: 'pre-wrap', paddingRight: 28 }}>{content}</div>
+                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0, transition: 'opacity 0.15s' }} />
                       </div>
                     );
                   },
@@ -562,10 +562,12 @@ export default function ChatPage() {
                       });
                     };
                     return (
-                      <div style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
+                      <div className="msg-hover-copy" style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
                         <ThinkingBlock content={parsed?.thinkingBlock} />
-                        <Markdown>{parsed?.cleanContent || ''}</Markdown>
-                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopyAssistant} style={{ position: 'absolute', top: 4, right: 4, opacity: 0.3 }} />
+                        <div style={{ paddingRight: 28 }}>
+                          <Markdown>{parsed?.cleanContent || ''}</Markdown>
+                        </div>
+                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopyAssistant} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0, transition: 'opacity 0.15s' }} />
                       </div>
                     );
                   }
