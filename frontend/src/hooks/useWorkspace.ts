@@ -13,7 +13,7 @@ export interface WorkspaceFile {
 export function useWorkspace(sessionId: string | null) {
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
   const [workspaceFilesLoading, setWorkspaceFilesLoading] = useState(false);
-  const [workspaceSubPath, setWorkspaceSubPath] = useState<string>('');
+  const [workspaceSubPath, setWorkspaceSubPath] = useState<string>('output');
 
   const loadWorkspaceFiles = useCallback(async (subPath?: string) => {
     if (!sessionId) {

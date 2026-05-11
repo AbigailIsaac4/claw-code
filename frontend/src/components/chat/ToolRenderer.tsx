@@ -1,7 +1,7 @@
 import React from 'react';
 import { Collapse, Typography } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
-import { Highlighter } from '@lobehub/ui';
+import { Highlighter, Markdown } from '@lobehub/ui';
 import { colors } from '@/styles/tokens';
 
 const { Text } = Typography;
@@ -161,9 +161,9 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
                     {parsedResult && (
                       <>
                         <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Output</div>
-                        <Highlighter language="bash" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                          {parsedResult}
-                        </Highlighter>
+                        <div style={{ maxHeight: 300, overflowY: 'auto', padding: '8px 12px', background: colors.bgTertiary, borderRadius: 6, fontSize: 13 }}>
+                          <Markdown>{parsedResult}</Markdown>
+                        </div>
                       </>
                     )}
                     {tool.error && (
@@ -177,9 +177,9 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
                     {tool.result && (
                       <>
                         <div style={{ marginBottom: 6, color: colors.textSecondary, fontSize: 12 }}>Result</div>
-                        <Highlighter language="json" style={{ maxHeight: 200, overflowY: 'auto' }}>
-                          {tool.result.substring(0, 1000) + (tool.result.length > 1000 ? '\n...[truncated]' : '')}
-                        </Highlighter>
+                        <div style={{ maxHeight: 400, overflowY: 'auto', padding: '8px 12px', background: colors.bgTertiary, borderRadius: 6, fontSize: 13 }}>
+                          <Markdown>{tool.result}</Markdown>
+                        </div>
                       </>
                     )}
                     {tool.error && <div style={{ color: colors.error, marginTop: 8, fontSize: 12 }}>{tool.error}</div>}

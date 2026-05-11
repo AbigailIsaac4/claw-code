@@ -125,12 +125,9 @@ export function useChatStream({
             setConversationLoading(false);
             setActiveToolName(null);
             setActiveToolSummary(null);
-            // Delay reload to let backend persist messages — avoids overwriting
-            // streamed content with stale API data
-            setTimeout(() => {
-              void loadSessionDetail(sessionId, token, sessions);
-              void loadWorkspaceFiles(workspaceSubPath || undefined);
-            }, 1500);
+            // Refresh workspace files only; streamed messages are already
+            // correct in memory — reloading from API risks overwriting them.
+            void loadWorkspaceFiles(workspaceSubPath || undefined);
             return;
           }
           if (ev.event === 'session_created') {

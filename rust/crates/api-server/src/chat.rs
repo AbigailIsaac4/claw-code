@@ -214,6 +214,9 @@ pub async fn chat_completions(
         }
     };
 
+    // Ensure output/ directory exists for agent result files
+    let _ = std::fs::create_dir_all(workspace_dir.join("output"));
+
     // 通知前端实际使用的 session_id（尤其是前端未传时后端自动生成的情况）
     let session_id_for_event = session_id.clone();
     tokio::task::spawn(async move {

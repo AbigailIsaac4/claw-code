@@ -13,7 +13,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
   const [token, setToken] = useState<string | null>(null);
   const [showLogin, setShowLogin] = useState(true);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('Abc123456!');
   const [loginLoading, setLoginLoading] = useState(false);
 
   const handleLogin = useCallback(async () => {

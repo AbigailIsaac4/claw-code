@@ -1,6 +1,7 @@
 import React from 'react';
 import { Collapse, Typography } from 'antd';
 import { BulbOutlined } from '@ant-design/icons';
+import { Markdown } from '@lobehub/ui';
 import { colors } from '@/styles/tokens';
 
 const { Text } = Typography;
@@ -19,7 +20,7 @@ export const ThinkingBlock: React.FC<Props> = ({ content }) => {
       items={[{
         key: '1',
         label: <Text type="secondary" style={{ fontSize: 13 }}><BulbOutlined /> 思考过程</Text>,
-        children: <div style={{ color: colors.textSecondary, fontSize: 13, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 300, overflowY: 'auto' }}>{content}</div>
+        children: <div style={{ maxHeight: 300, overflowY: 'auto', padding: '8px 12px', background: colors.bgTertiary, borderRadius: 6, fontSize: 13, color: colors.textSecondary }}><Markdown>{content}</Markdown></div>,
       }]}
       style={{ marginBottom: 12, background: colors.shadow, borderRadius: 8 }}
     />

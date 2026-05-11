@@ -66,15 +66,24 @@ export function parseMessageContent(rawContent: string): ParsedMessage {
   let text = rawContent || '';
   let thinkingBlock: string | undefined;
 
-  const thinkMatch = text.match(/<thinking>([\s\S]*?)<\/thinking>/);
-  if (thinkMatch) {
-    thinkingBlock = thinkMatch[1].trim();
-    text = text.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
-  } else if (text.includes('<thinking>')) {
-    const parts = text.split('<thinking>');
-    thinkingBlock = parts[1]?.trim();
-    text = parts[0]?.trim() ?? '';
+  // Extract all <thinking>...</thinking> blocks (closed tags)
+  const closedBlocks: string[] = [];
+  let remaining = text;
+  const closedRegex = /<thinking>([\s\S]*?)<\/thinking>/g;
+  let match;
+  while ((match = closedRegex.exec(text)) !== null) {
+    closedBlocks.push(match[1].trim());
   }
+  if (closedBlocks.length > 0) {
+    thinkingBlock = closedBlocks.join('\n\n---\n\n');
+    remaining = remaining.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+  } else if (remaining.includes('<thinking>')) {
+    // Unclosed tag during streaming — take content after the last <thinking>
+    const parts = remaining.split('<thinking>');
+    thinkingBlock = parts[parts.length - 1]?.trim();
+    remaining = parts.slice(0, -1).join('<thinking>').trim();
+  }
+  text = remaining;
 
   const workspaceFiles = extractWorkspaceFiles(text);
   const cleanContent = text;

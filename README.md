@@ -28,7 +28,7 @@
   <img src="assets/claw-hero.jpeg" alt="Claw Code" width="300" />
 </p>
 
-Claw Code is the public Rust implementation of the `claw` CLI agent harness.
+Claw Code is the public Rust implementation of the `claw` CLI agent harness, with a web frontend for browser-based usage.
 The canonical implementation lives in [`rust/`](./rust), and the current source of truth for this repository is **ultraworkers/claw-code**.
 
 > [!IMPORTANT]
@@ -38,12 +38,14 @@ The canonical implementation lives in [`rust/`](./rust), and the current source 
 
 ## Current repository shape
 
-- **`rust/`** — canonical Rust workspace and the `claw` CLI binary
+- **`rust/`** — canonical Rust workspace: `claw` CLI binary + `api-server` web backend
+- **`frontend/`** — Next.js web frontend with chat UI, SSE streaming, workspace file management
+- **`scripts/`** — deployment, user initialization, and formatting scripts
+- **`assets/`** — skills and static assets
 - **`USAGE.md`** — task-oriented usage guide for the current product surface
 - **`PARITY.md`** — Rust-port parity status and migration notes
 - **`ROADMAP.md`** — active roadmap and cleanup backlog
 - **`PHILOSOPHY.md`** — project intent and system-design framing
-- **`src/` + `tests/`** — companion Python/reference workspace and audit helpers; not the primary runtime surface
 
 ## Quick start
 
@@ -184,6 +186,64 @@ Run the workspace test suite after verifying the binary works:
 cd rust
 cargo test --workspace
 ```
+
+## Web deployment (quick start)
+
+The web frontend provides a browser-based chat interface with SSE streaming, workspace file management, and user authentication.
+
+### Prerequisites
+
+- Rust toolchain (`rustup`)
+- Node.js 18+ and npm
+- Nginx (for production reverse proxy)
+- LLM API access (OpenAI-compatible endpoint)
+
+### Build
+
+```bash
+# Backend (release build)
+cd rust
+cargo build --release -p api-server
+
+# Frontend
+cd ../frontend
+npm ci
+npm run build
+```
+
+### Configure
+
+Edit `rust/.env`:
+
+```env
+PORT=18008
+OPENAI_BASE_URL=http://your-llm-endpoint/v1
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL_NAME=your-model
+CLAW_WORKSPACE_ROOT=./data/workspaces
+```
+
+### Run
+
+```bash
+# Backend
+cd rust
+./target/release/api-server
+
+# Frontend (in another terminal)
+cd frontend
+API_INTERNAL_BASE_URL=http://127.0.0.1:18008 npx next start -p 3000
+```
+
+### Initialize users
+
+```bash
+bash scripts/init_users.sh http://127.0.0.1:18008
+```
+
+### Production deployment
+
+See [`scripts/deploy.sh`](./scripts/deploy.sh) for systemd services, Nginx config with SSE support, and full deployment automation. Default setup: backend on port 18008, frontend on port 3000, Nginx reverse proxy with custom domain.
 
 ## Documentation map
 

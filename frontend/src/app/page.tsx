@@ -304,36 +304,56 @@ export default function ChatPage() {
 
       {/* Login modal */}
       <Modal
-        title={<Typography.Title level={4} style={{ margin: 0, textAlign: 'center' }}>Welcome to Claw Agent</Typography.Title>}
         open={showLogin}
         closable={false}
         keyboard={false}
         mask={{ closable: false }}
         footer={null}
-        width={360}
+        width={400}
+        styles={{ body: { padding: '24px 32px 32px' } }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 24 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ marginBottom: 12 }}>
+            <Avatar size={48} style={{ background: `linear-gradient(135deg, ${colors.accent}, #7c3aed)`, borderRadius: 12 }} icon={<RobotOutlined />} />
+          </div>
+          <Typography.Title level={3} style={{ margin: '0 0 4px', fontSize: 22 }}>Claw Agent</Typography.Title>
+          <Text type="secondary" style={{ fontSize: 14 }}>Sign in to start building</Text>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Input
             size="large"
-            prefix={<UserOutlined />}
-            placeholder="Email"
+            prefix={<UserOutlined style={{ color: colors.textTertiary }} />}
+            placeholder="Work email"
             value={email}
             onChange={e => setEmail(e.target.value)}
+            allowClear
           />
           <Input.Password
             size="large"
-            prefix={<LockOutlined />}
+            prefix={<LockOutlined style={{ color: colors.textTertiary }} />}
             placeholder="Password"
             value={password}
             onChange={e => setPassword(e.target.value)}
             onPressEnter={handleLogin}
+            allowClear
           />
-          <Button type="primary" size="large" block loading={loginLoading} onClick={handleLogin}>
+          <Button type="primary" size="large" block loading={loginLoading} onClick={handleLogin} style={{ height: 44, fontWeight: 600, marginTop: 4 }}>
             Sign in
           </Button>
-          <Text type="secondary" style={{ textAlign: 'center', fontSize: 12 }}>
-            Use your workspace account to continue.
-          </Text>
+        </div>
+
+        <div style={{ marginTop: 20, padding: '12px 16px', background: colors.bgTertiary, borderRadius: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
+            <div>
+              <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Default account</Text>
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', lineHeight: 1.6 }}>
+                Email: your work email<br />
+                Password: <Text code style={{ fontSize: 11, background: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: 3 }}>Abc123456!</Text>
+              </Text>
+            </div>
+          </div>
         </div>
       </Modal>
 
@@ -480,37 +500,12 @@ export default function ChatPage() {
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
           <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {(!activeSession || activeSession.messages.length === 0) && (
-              <div style={{ textAlign: 'center', marginTop: 60 }}>
+              <div style={{ textAlign: 'center', marginTop: 120 }}>
                 <RobotOutlined style={{ fontSize: 48, color: colors.accent, marginBottom: 16 }} />
                 <Typography.Title level={3} style={{ color: '#333', marginBottom: 4 }}>Claw Agent</Typography.Title>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 40, fontSize: 14 }}>
-                  I can write code, run commands, analyze files, and more. Try a prompt below to get started.
+                <Text type="secondary" style={{ display: 'block', fontSize: 14 }}>
+                  I can write code, run commands, analyze files, and more.
                 </Text>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 520, margin: '0 auto' }}>
-                  {[
-                    { icon: <CodeOutlined />, title: 'Write Code', desc: 'Generate functions, scripts, or full modules', prompt: 'Help me write a Python script that reads a CSV file and computes summary statistics.' },
-                    { icon: <SearchOutlined />, title: 'Analyze Code', desc: 'Understand architecture, find bugs, review PRs', prompt: 'Analyze the current project structure and explain the main entry points and data flow.' },
-                    { icon: <FileTextOutlined />, title: 'Process Files', desc: 'Parse, transform, and generate documents', prompt: 'Read the README.md in the current directory and create a concise summary.' },
-                    { icon: <ThunderboltOutlined />, title: 'Run Commands', desc: 'Execute shell commands and automate tasks', prompt: 'List all running processes and check disk usage on this machine.' },
-                  ].map((item, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => { setInput(item.prompt); }}
-                      style={{
-                        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
-                        padding: '16px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
-                        background: '#fafafa', border: '1px solid #f0f0f0',
-                        transition: 'all 0.2s ease',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = colors.accent; e.currentTarget.style.background = colors.bgPrimary; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = colors.border; e.currentTarget.style.background = colors.bgTertiary; }}
-                    >
-                      <span style={{ fontSize: 20, color: colors.accent }}>{item.icon}</span>
-                      <Text strong style={{ fontSize: 14 }}>{item.title}</Text>
-                      <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.4 }}>{item.desc}</Text>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
 
@@ -711,7 +706,7 @@ export default function ChatPage() {
                 <div style={{ textAlign: 'center', padding: '24px 16px' }}>
                   <FolderOutlined style={{ fontSize: 32, color: colors.border, marginBottom: 8 }} />
                   <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                    {activeSessionId ? 'No files yet' : 'Select a session'}
+                    {!activeSessionId ? 'Select a session' : workspaceSubPath === 'output' ? 'No result files yet' : 'No files in this folder'}
                   </Text>
                 </div>
               ) : (
