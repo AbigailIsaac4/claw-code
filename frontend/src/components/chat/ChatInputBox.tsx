@@ -96,7 +96,7 @@ export const ChatInputBox: React.FC<Props> = ({
                     type="secondary"
                     style={{ display: 'block', fontSize: 13, marginBottom: 8 }}
                   >
-                    选择技能并插入到输入框
+                    点击插入技能命令 /skill_name
                   </AntText>
                   {skills.length === 0 ? (
                     <div style={{ padding: 12, textAlign: 'center' }}>
@@ -119,9 +119,10 @@ export const ChatInputBox: React.FC<Props> = ({
                         onMouseLeave={(e) => {
                           e.currentTarget.style.background = 'transparent';
                         }}
-                        onClick={() =>
-                          setInput((prev) => prev + (prev.trim() ? '\n' : '') + `请使用 ${item.name} 技能`)
-                        }
+                        onClick={() => {
+                          const skillName = item.name.includes('/') ? item.name.split('/').pop()! : item.name;
+                          setInput((prev) => prev + (prev.trim() ? ' ' : '') + `/${skillName}`);
+                        }}
                       >
                         <div
                           style={{

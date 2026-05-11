@@ -15,6 +15,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('Abc123456!');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [fullName, setFullName] = useState('');
 
   const handleLogin = useCallback(async () => {
     if (!email || !password) {
@@ -32,6 +33,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
       if (res.ok && data.token) {
         localStorage.setItem('claw_token', data.token);
         setToken(data.token);
+        setFullName(data.full_name || '');
         setShowLogin(false);
         callbacks.onLoginSuccess?.(data.token, data.full_name);
       } else {
@@ -47,6 +49,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
   const handleLogout = useCallback(() => {
     localStorage.removeItem('claw_token');
     setToken(null);
+    setFullName('');
     setShowLogin(true);
     callbacks.onLogout?.();
   }, [callbacks]);
@@ -61,6 +64,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
     password,
     setPassword,
     loginLoading,
+    fullName,
     handleLogin,
     handleLogout,
   };

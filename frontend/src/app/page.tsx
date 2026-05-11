@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp, Tooltip, Radio } from 'antd';
 import { Markdown, DraggablePanel, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
 import { ChatList, LoadingDots } from '@lobehub/ui/chat';
-import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, SettingOutlined, ApiOutlined, CheckCircleOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOutlined, FileOutlined, ReloadOutlined, CodeOutlined, SearchOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOutlined, FileOutlined, ReloadOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -65,7 +65,7 @@ export default function ChatPage() {
   const {
     token, setToken, showLogin, setShowLogin,
     email, setEmail, password, setPassword,
-    loginLoading, handleLogin, handleLogout,
+    loginLoading, fullName, handleLogin, handleLogout,
   } = useAuth({
     onLoginSuccess: (t, fullName) => {
       message.success(`Signed in as ${fullName}`);
@@ -123,22 +123,12 @@ export default function ChatPage() {
     onQuestionRequired: (data) => { setQuestionReq(data); setQuestionAnswer(''); },
   });
 
-  const [showSettings, setShowSettings] = useState(false);
-  const [plugins, setPlugins] = useState([
-    { id: '1', name: 'Postgres DB', command: 'npx', args: '-y @modelcontextprotocol/server-postgres', active: true },
-    { id: '2', name: 'GitHub Repo', command: 'npx', args: '-y @modelcontextprotocol/server-github', active: false },
-  ]);
-
-  const [showSkillsModal, setShowSkillsModal] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [skillsLoading, setSkillsLoading] = useState(false);
-  const [skillSearch, setSkillSearch] = useState('');
   const [leftExpand, setLeftExpand] = useState(true);
   const [rightExpand, setRightExpand] = useState(true);
 
   // --- Local functions ---
   const loadSkills = async () => {
-    setSkillsLoading(true);
     try {
       const res = await fetch(apiUrl('/v1/skills'));
       if (!res.ok) return;
@@ -146,8 +136,6 @@ export default function ChatPage() {
       if (data.status === 'success') setSkills(data.data);
     } catch (err) {
       console.error('Failed to load skills:', err);
-    } finally {
-      setSkillsLoading(false);
     }
   };
 
@@ -231,6 +219,11 @@ export default function ChatPage() {
   const sendMessage = () => {
     if ((!input.trim() && uploadedFiles.length === 0) || loadingRef.current || !activeSession || !token) return;
     let finalInput = input;
+    // Resolve /skill_name placeholders to actual skill invocations
+    for (const skill of skills) {
+      const skillName = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
+      finalInput = finalInput.replace(new RegExp(`/${skillName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`, 'g'), `请使用 ${skill.name} 技能$1`);
+    }
     if (uploadedFiles.length > 0) {
       finalInput += (finalInput ? '\n\n' : '') + buildUploadedWorkspacePrompt(uploadedFiles);
     }
@@ -421,26 +414,32 @@ export default function ChatPage() {
                         {item.title}
                       </Text>
                     </Space>
-                    <Popconfirm
-                      title="Delete this session?"
-                      onConfirm={(e) => deleteSession(item.id, e as React.MouseEvent)}
-                      onCancel={(e) => e?.stopPropagation()}
-                      okText="Delete"
-                      cancelText="Cancel"
-                    >
-                      <Button
-                        type="text"
-                        danger
-                        icon={<DeleteOutlined />}
-                        size="small"
-                        onClick={e => e.stopPropagation()}
-                        style={{ opacity: isActive ? 1 : 0.4 }}
-                      />
-                    </Popconfirm>
+                    <Button
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      size="small"
+                      onClick={e => { e.stopPropagation(); deleteSession(item.id, e as React.MouseEvent); }}
+                      style={{ opacity: isActive ? 1 : 0.4 }}
+                    />
                   </div>
                 );
               })}
             </div>
+          </div>
+
+          {/* User profile bar */}
+          <div style={{ padding: '12px 16px', borderTop: `1px solid ${colors.borderLight}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Avatar size={32} style={{ background: `linear-gradient(135deg, ${colors.info}, #7c3aed)` }} icon={<UserOutlined />} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text strong style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullName}</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>{email || 'Signed in'}</Text>
+            </div>
+            <Tooltip title="Sign out" placement="top">
+              <Button type="text" size="small" onClick={() => { handleLogout(); }} style={{ fontSize: 16, color: colors.textTertiary, padding: '0 4px' }}>
+                <Text type="secondary" style={{ fontSize: 16 }}>⏻</Text>
+              </Button>
+            </Tooltip>
           </div>
         </div>
       </DraggablePanel>
@@ -456,29 +455,6 @@ export default function ChatPage() {
           }
           actions={
             <Space style={{ whiteSpace: 'nowrap' }}>
-              <Popconfirm
-                title="Clear all messages?"
-                description="This cannot be undone."
-                onConfirm={() => {
-                  if (activeSessionId) {
-                    updateSessionMessages(activeSessionId, []);
-                  }
-                }}
-                okText="Clear"
-                cancelText="Cancel"
-              >
-                <ActionIcon icon={DeleteOutlined} title="Clear chat" />
-              </Popconfirm>
-              <ActionIcon
-                icon={ThunderboltOutlined}
-                title="Skills"
-                onClick={() => setShowSkillsModal(true)}
-              />
-              <ActionIcon
-                icon={SettingOutlined}
-                title="Settings"
-                onClick={() => setShowSettings(true)}
-              />
               <ActionIcon
                 icon={ShareAltOutlined}
                 title="Copy share link"
@@ -812,99 +788,6 @@ export default function ChatPage() {
         </Space>
       </Modal>
 
-      {/* Settings Modal */}
-      <Modal
-        title={<Space><SettingOutlined /> <span>Settings</span></Space>}
-        open={showSettings}
-        onCancel={() => setShowSettings(false)}
-        footer={null}
-        width={700}
-      >
-        <div style={{ marginTop: 24 }}>
-          <Typography.Title level={5}>MCP Servers</Typography.Title>
-          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>Manage MCP server integrations for the agent.</Text>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {plugins.map(item => (
-              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: colors.bgTertiary, borderRadius: 8, border: `1px solid ${colors.border}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <ApiOutlined style={{ fontSize: 24, color: item.active ? colors.info : colors.textTertiary }} />
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Text strong>{item.name}</Text>
-                      {item.active && <Text type="success" style={{ fontSize: 12 }}><CheckCircleOutlined /> Active</Text>}
-                    </div>
-                    <Text code style={{ fontSize: 12, marginTop: 4, display: 'block' }}>{item.command} {item.args}</Text>
-                  </div>
-                </div>
-                <Space>
-                  <Button
-                    key="toggle"
-                    type={item.active ? 'default' : 'primary'}
-                    size="small"
-                    onClick={() => setPlugins(prev => prev.map(p => p.id === item.id ? { ...p, active: !p.active } : p))}
-                  >
-                    {item.active ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => setPlugins(prev => prev.filter(p => p.id !== item.id))} />
-                </Space>
-              </div>
-            ))}
-          </div>
-          <Button
-            type="dashed"
-            block
-            icon={<PlusOutlined />}
-            style={{ marginTop: 16 }}
-            onClick={() => {
-              const newPlugin = { id: `plugin-${Date.now()}`, name: 'New MCP Server', command: 'npx', args: '', active: false };
-              setPlugins([...plugins, newPlugin]);
-            }}
-          >
-            Add MCP Server
-          </Button>
-        </div>
-      </Modal>
-
-      {/* Skills Modal */}
-      <Modal
-        title={<Space><ThunderboltOutlined /> <span>Agent Skills</span></Space>}
-        open={showSkillsModal}
-        onCancel={() => setShowSkillsModal(false)}
-        footer={null}
-        width={700}
-      >
-        <div style={{ marginTop: 24, maxHeight: '60vh', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ marginBottom: 16 }}>
-            <Input
-              placeholder="Search skills..."
-              value={skillSearch}
-              onChange={e => setSkillSearch(e.target.value)}
-              allowClear
-            />
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {skillsLoading ? (
-              <div style={{ textAlign: 'center', padding: 40 }}><Text type="secondary">Loading skills...</Text></div>
-            ) : skills.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40 }}><Text type="secondary">No skills available.</Text></div>
-            ) : skills.filter(s => s.name.toLowerCase().includes(skillSearch.toLowerCase()) || s.description.toLowerCase().includes(skillSearch.toLowerCase())).length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40 }}><Text type="secondary">No matching skills found.</Text></div>
-            ) : skills.filter(s => s.name.toLowerCase().includes(skillSearch.toLowerCase()) || s.description.toLowerCase().includes(skillSearch.toLowerCase())).map(item => (
-              <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: colors.bgCode, borderRadius: 12, border: `1px solid ${colors.borderLight}` }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flex: 1 }}>
-                  <Avatar style={{ backgroundColor: colors.infoBg, color: colors.info }} icon={<RobotOutlined />} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Text strong style={{ fontSize: 15 }}>{item.name}</Text>
-                    </div>
-                    <Text type="secondary" style={{ fontSize: 13, marginTop: 8, display: 'block', wordBreak: 'break-word', lineHeight: 1.5 }}>{item.description}</Text>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Modal>
 
     </div>
   );
