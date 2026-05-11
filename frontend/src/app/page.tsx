@@ -21,6 +21,28 @@ const { Text } = Typography;
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
+
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  // Fallback for HTTP / non-secure contexts
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const UPLOADED_WORKSPACE_PREFIX = 'Uploaded workspace files: ';
 const UPLOADED_WORKSPACE_SUFFIX = ' Please continue with the current session.';
 
@@ -459,11 +481,10 @@ export default function ChatPage() {
                 icon={ShareAltOutlined}
                 title="Copy share link"
                 onClick={async () => {
-                  try {
-                    const shareUrl = `${window.location.origin}/?session=${activeSession?.id}&share=true`;
-                    await navigator.clipboard.writeText(shareUrl);
+                  const shareUrl = `${window.location.origin}/?session=${activeSession?.id}&share=true`;
+                  if (await copyToClipboard(shareUrl)) {
                     message.success('Share link copied to clipboard.');
-                  } catch {
+                  } else {
                     message.error('Failed to copy share link');
                   }
                 }}
@@ -510,12 +531,12 @@ export default function ChatPage() {
                 renderMessages={{
                   user: ({ content }) => {
                     const uploadedFilesPrompt = parseUploadedWorkspacePrompt(content);
-                    const handleCopy = () => {
-                      navigator.clipboard.writeText(content).then(() => {
+                    const handleCopy = async () => {
+                      if (await copyToClipboard(content)) {
                         message.success('Copied to clipboard');
-                      }).catch(() => {
+                      } else {
                         message.error('Copy failed');
-                      });
+                      }
                     };
                     if (uploadedFilesPrompt) {
                       return (
@@ -553,13 +574,13 @@ export default function ChatPage() {
                   },
                   assistant: ({ extra, content }) => {
                     const parsed = extra?.parsed;
-                    const handleCopyAssistant = () => {
+                    const handleCopyAssistant = async () => {
                       const text = parsed?.cleanContent || content || '';
-                      navigator.clipboard.writeText(text).then(() => {
+                      if (await copyToClipboard(text)) {
                         message.success('Copied to clipboard');
-                      }).catch(() => {
+                      } else {
                         message.error('Copy failed');
-                      });
+                      }
                     };
                     return (
                       <div className="msg-hover-copy" style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
