@@ -1,63 +1,66 @@
 #!/usr/bin/env bash
-# Claw Agent Production Deployment Guide
-# Server directory: /home/users/agent/workspace/claw-code
-# Frontend domain: claw.ai.accuredit.com
+# Claw Agent Production Deployment
 #
-# Prerequisites:
-#   - Rust toolchain (rustup)
-#   - Node.js 18+ and npm
-#   - Nginx
-#   - DNS A record: claw.ai.accuredit.com -> server IP
+# 路径说明：
+#   后端代码目录: /storage/users/agent/claw-code
+#   前端构建输出: /home/art/workspace/ui/
+#   Nginx配置:   /etc/nginx/conf.d/claw.conf
+#   域名:        claw.ai.accuredit.com
 
 set -euo pipefail
 
-DEPLOY_DIR="/home/users/agent/workspace/claw-code"
-FRONTEND_PORT=3000
+# ──────────────── 配置区 ────────────────
+DEPLOY_DIR="/storage/users/agent/claw-code"
+FRONTEND_OUTPUT="/home/art/workspace/ui"
 BACKEND_PORT=18008
+FRONTEND_PORT=3000
 DOMAIN="claw.ai.accuredit.com"
 
 echo "============================================"
-echo "  Claw Agent Deployment"
-echo "  Directory: ${DEPLOY_DIR}"
-echo "  Domain:    ${DOMAIN}"
+echo "  Claw Agent 部署"
+echo "  后端目录: ${DEPLOY_DIR}"
+echo "  前端输出: ${FRONTEND_OUTPUT}"
+echo "  域名:     ${DOMAIN}"
 echo "============================================"
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 0: Directory structure
-# ─────────────────────────────────────────────
-echo "[0/5] Preparing directories..."
+# ──────────────── Step 0: 准备目录 ────────────────
+echo "[0/6] 准备目录结构..."
 mkdir -p "${DEPLOY_DIR}/rust/data/workspaces"
 mkdir -p "${DEPLOY_DIR}/logs"
+mkdir -p "${FRONTEND_OUTPUT}"
 
-# Backup database before deploy (if it exists)
+# 备份数据库（如果存在）
 DB_FILE="${DEPLOY_DIR}/rust/claw_agent.db"
 if [ -f "$DB_FILE" ]; then
     cp "$DB_FILE" "${DB_FILE}.bak.$(date +%Y%m%d%H%M%S)"
-    echo "  -> Backed up database to ${DB_FILE}.bak.*"
+    echo "  -> 已备份数据库"
 fi
 
-# ─────────────────────────────────────────────
-# Step 1: Build Rust backend
-# ─────────────────────────────────────────────
-echo "[1/5] Building Rust backend (release)..."
+# ──────────────── Step 1: 编译 Rust 后端 ────────────────
+echo "[1/6] 编译 Rust 后端..."
 cd "${DEPLOY_DIR}/rust"
 cargo build --release -p api-server 2>&1
-echo "  -> Backend binary: ${DEPLOY_DIR}/rust/target/release/api-server"
+echo "  -> 后端二进制: ${DEPLOY_DIR}/rust/target/release/api-server"
 
-# ─────────────────────────────────────────────
-# Step 2: Build Next.js frontend
-# ─────────────────────────────────────────────
-echo "[2/5] Building Next.js frontend..."
+# ──────────────── Step 2: 构建 Next.js 前端 ────────────────
+echo "[2/6] 构建 Next.js 前端..."
 cd "${DEPLOY_DIR}/frontend"
 npm ci --production=false 2>&1
 npm run build 2>&1
-echo "  -> Frontend built successfully"
 
-# ─────────────────────────────────────────────
-# Step 3: Configure backend .env
-# ─────────────────────────────────────────────
-echo "[3/5] Checking backend .env..."
+# 复制构建产物到前端输出目录
+echo "  -> 复制构建产物到 ${FRONTEND_OUTPUT}..."
+rm -rf "${FRONTEND_OUTPUT:?}"/*
+cp -r .next/static "${FRONTEND_OUTPUT}/static"
+cp -r .next/server  "${FRONTEND_OUTPUT}/server"
+cp -r public        "${FRONTEND_OUTPUT}/public" 2>/dev/null || true
+cp package.json     "${FRONTEND_OUTPUT}/package.json"
+cp next.config.*    "${FRONTEND_OUTPUT}/" 2>/dev/null || true
+echo "  -> 前端构建完成"
+
+# ──────────────── Step 3: 后端环境变量 ────────────────
+echo "[3/6] 检查后端 .env..."
 ENV_FILE="${DEPLOY_DIR}/rust/.env"
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
@@ -69,17 +72,15 @@ OPENAI_MODEL_NAME=qwen
 
 CLAW_WORKSPACE_ROOT=./data/workspaces
 ENVEOF
-    echo "  -> Created ${ENV_FILE} (edit OPENAI_API_KEY before starting)"
+    echo "  -> 已创建 ${ENV_FILE}"
 else
-    echo "  -> ${ENV_FILE} already exists, skipping"
+    echo "  -> ${ENV_FILE} 已存在，跳过"
 fi
 
-# ─────────────────────────────────────────────
-# Step 4: Write systemd service files
-# ─────────────────────────────────────────────
-echo "[4/5] Writing systemd service files..."
+# ──────────────── Step 4: Systemd 服务 ────────────────
+echo "[4/6] 写入 systemd 服务配置..."
 
-# Backend service
+# 后端服务
 sudo tee /etc/systemd/system/claw-backend.service > /dev/null << SERVICEEOF
 [Unit]
 Description=Claw Agent Backend (api-server)
@@ -98,7 +99,7 @@ Environment=RUST_LOG=info,api_server=debug
 WantedBy=multi-user.target
 SERVICEEOF
 
-# Frontend service
+# 前端服务（Next.js SSR）
 sudo tee /etc/systemd/system/claw-frontend.service > /dev/null << SERVICEEOF
 [Unit]
 Description=Claw Agent Frontend (Next.js)
@@ -107,7 +108,7 @@ After=network.target claw-backend.service
 [Service]
 Type=simple
 User=$(whoami)
-WorkingDirectory=${DEPLOY_DIR}/frontend
+WorkingDirectory=${FRONTEND_OUTPUT}
 ExecStart=$(which node) ${DEPLOY_DIR}/frontend/node_modules/.bin/next start -p ${FRONTEND_PORT}
 Restart=on-failure
 RestartSec=5
@@ -121,28 +122,26 @@ SERVICEEOF
 echo "  -> /etc/systemd/system/claw-backend.service"
 echo "  -> /etc/systemd/system/claw-frontend.service"
 
-# ─────────────────────────────────────────────
-# Step 5: Write Nginx config
-# ─────────────────────────────────────────────
-echo "[5/5] Writing Nginx config..."
+# ──────────────── Step 5: Nginx 配置 ────────────────
+echo "[5/6] 写入 Nginx 配置..."
 
 sudo tee /etc/nginx/conf.d/claw.conf > /dev/null << 'NGINXEOF'
 # Claw Agent - claw.ai.accuredit.com
-# SSE support: disable proxy buffering for real-time streaming
-
-upstream claw_frontend {
-    server 127.0.0.1:3000;
-}
+# SSE 支持: 禁用代理缓冲以实现实时流式传输
 
 upstream claw_backend {
     server 127.0.0.1:18008;
+}
+
+upstream claw_frontend {
+    server 127.0.0.1:3000;
 }
 
 server {
     listen 80;
     server_name claw.ai.accuredit.com;
 
-    # Uncomment after obtaining SSL certificate:
+    # SSL 配置（获取证书后取消注释）:
     # listen 443 ssl;
     # ssl_certificate     /etc/nginx/ssl/claw.ai.accuredit.com.crt;
     # ssl_certificate_key /etc/nginx/ssl/claw.ai.accuredit.com.key;
@@ -150,7 +149,7 @@ server {
 
     client_max_body_size 50M;
 
-    # API endpoints -> Rust backend (direct, for SSE streaming)
+    # API: SSE 流式接口 -> Rust 后端
     location /v1/chat/completions {
         proxy_pass http://claw_backend;
         proxy_http_version 1.1;
@@ -160,14 +159,14 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # SSE: disable buffering for real-time event streaming
+        # SSE: 禁用缓冲
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 300s;
         chunked_transfer_encoding on;
     }
 
-    # All other API endpoints -> Rust backend
+    # API: 其他接口 -> Rust 后端
     location /v1/ {
         proxy_pass http://claw_backend;
         proxy_http_version 1.1;
@@ -178,12 +177,20 @@ server {
         proxy_read_timeout 120s;
     }
 
-    # Health check
+    # 健康检查
     location /health {
         proxy_pass http://claw_backend;
     }
 
-    # Everything else -> Next.js frontend
+    # 前端静态资源（直接从构建目录读取）
+    location /_next/static/ {
+        alias /home/art/workspace/ui/static/;
+        expires 365d;
+        access_log off;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # 其他请求 -> Next.js SSR
     location / {
         proxy_pass http://claw_frontend;
         proxy_http_version 1.1;
@@ -199,30 +206,29 @@ NGINXEOF
 
 echo "  -> /etc/nginx/conf.d/claw.conf"
 
+# ──────────────── Step 6: 完成 ────────────────
+echo "[6/6] 部署脚本执行完成"
 echo ""
 echo "============================================"
-echo "  Deployment files created. Next steps:"
+echo "  后续操作:"
 echo "============================================"
 echo ""
-echo "  1. Edit backend env:"
+echo "  1. 编辑后端环境变量:"
 echo "     vim ${DEPLOY_DIR}/rust/.env"
 echo ""
-echo "  2. Reload systemd and start services:"
+echo "  2. 重载 systemd 并启动服务:"
 echo "     sudo systemctl daemon-reload"
 echo "     sudo systemctl enable claw-backend claw-frontend"
-echo "     sudo systemctl start claw-backend"
-echo "     sudo systemctl start claw-frontend"
+echo "     sudo systemctl restart claw-backend"
+echo "     sudo systemctl restart claw-frontend"
 echo ""
-echo "  3. Test Nginx config and reload:"
+echo "  3. 测试并重载 Nginx:"
 echo "     sudo nginx -t && sudo systemctl reload nginx"
 echo ""
-echo "  4. Initialize users:"
+echo "  4. 初始化用户（可重复执行，已存在会跳过）:"
 echo "     bash ${DEPLOY_DIR}/scripts/init_users.sh http://127.0.0.1:${BACKEND_PORT}"
 echo ""
-echo "  5. Verify:"
+echo "  5. 验证:"
 echo "     curl http://127.0.0.1:${BACKEND_PORT}/health"
 echo "     curl -I http://${DOMAIN}"
-echo ""
-echo "  6. (Optional) Obtain SSL certificate:"
-echo "     sudo certbot --nginx -d ${DOMAIN}"
 echo ""
