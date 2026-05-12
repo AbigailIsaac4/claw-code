@@ -46,7 +46,7 @@ echo "  -> 后端二进制: ${DEPLOY_DIR}/rust/target/release/api-server"
 # ──────────────── Step 2: 构建 Next.js 前端 ────────────────
 echo "[2/8] 构建 Next.js 前端..."
 cd "${DEPLOY_DIR}/frontend"
-npm ci 2>&1
+npm install 2>&1
 rm -rf .next
 npm run build 2>&1
 
