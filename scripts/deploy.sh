@@ -1,34 +1,29 @@
 #!/usr/bin/env bash
 # Claw Agent Production Deployment
 #
-# 路径说明：
-#   后端代码目录: /storage/users/agent/claw-code
-#   前端构建输出: /storage/users/agent/claw-code/frontend
-#   Nginx配置:   /etc/nginx/conf.d/claw.conf
-#   域名:        claw.ai.accuredit.com
+# 架构: nginx(80) -> Next.js(3010) + Rust 后端(18008)
+#   部署目录:   /storage/users/agent/claw-code
+#   域名:      claw.ai.accuredit.com
 
 set -euo pipefail
 
 # ──────────────── 配置区 ────────────────
 DEPLOY_DIR="/storage/users/agent/claw-code"
-FRONTEND_OUTPUT="/storage/users/agent/claw-code/frontend"
 BACKEND_PORT=18008
-FRONTEND_PORT=3000
+FRONTEND_PORT=3010
 DOMAIN="claw.ai.accuredit.com"
 
 echo "============================================"
 echo "  Claw Agent 部署"
-echo "  后端目录: ${DEPLOY_DIR}"
-echo "  前端输出: ${FRONTEND_OUTPUT}"
+echo "  部署目录: ${DEPLOY_DIR}"
 echo "  域名:     ${DOMAIN}"
 echo "============================================"
 echo ""
 
 # ──────────────── Step 0: 准备目录 ────────────────
-echo "[0/8] 准备目录结构..."
+echo "[0/5] 准备目录结构..."
 mkdir -p "${DEPLOY_DIR}/rust/data/workspaces"
 mkdir -p "${DEPLOY_DIR}/logs"
-mkdir -p "${FRONTEND_OUTPUT}"
 
 # 备份数据库（如果存在）
 DB_FILE="${DEPLOY_DIR}/rust/claw_agent.db"
@@ -38,35 +33,26 @@ if [ -f "$DB_FILE" ]; then
 fi
 
 # ──────────────── Step 1: 编译 Rust 后端 ────────────────
-echo "[1/8] 编译 Rust 后端..."
+echo "[1/5] 编译 Rust 后端..."
 cd "${DEPLOY_DIR}/rust"
 cargo build --release -p api-server 2>&1
 echo "  -> 后端二进制: ${DEPLOY_DIR}/rust/target/release/api-server"
 
 # ──────────────── Step 2: 构建 Next.js 前端 ────────────────
-echo "[2/8] 构建 Next.js 前端..."
+echo "[2/5] 构建 Next.js 前端..."
+cd "${DEPLOY_DIR}"
+
+# 恢复可能被删除的前端源码文件
+git checkout -- frontend/ 2>/dev/null || true
+
 cd "${DEPLOY_DIR}/frontend"
-npm install 2>&1
+[ -d "node_modules" ] || npm install 2>&1
 rm -rf .next
 npm run build 2>&1
-
-# 复制构建产物到前端输出目录（如果源和目标不同才需要复制）
-CURRENT_DIR="$(pwd)"
-if [ "${CURRENT_DIR}" != "${FRONTEND_OUTPUT}" ]; then
-    echo "  -> 复制构建产物到 ${FRONTEND_OUTPUT}..."
-    rm -rf "${FRONTEND_OUTPUT:?}"/*
-    cp -r .next/static "${FRONTEND_OUTPUT}/static"
-    cp -r .next/server  "${FRONTEND_OUTPUT}/server"
-    cp -r public        "${FRONTEND_OUTPUT}/public" 2>/dev/null || true
-    cp package.json     "${FRONTEND_OUTPUT}/package.json"
-    cp next.config.*    "${FRONTEND_OUTPUT}/" 2>/dev/null || true
-else
-    echo "  -> 前端构建目录与输出目录相同，跳过复制"
-fi
 echo "  -> 前端构建完成"
 
 # ──────────────── Step 3: 后端环境变量 ────────────────
-echo "[3/8] 检查后端 .env..."
+echo "[3/5] 检查后端 .env..."
 ENV_FILE="${DEPLOY_DIR}/rust/.env"
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
@@ -82,7 +68,7 @@ else
 fi
 
 # ──────────────── Step 4: Systemd 服务 ────────────────
-echo "[4/8] 写入 systemd 服务配置..."
+echo "[4/5] 写入 systemd 服务配置..."
 
 # 后端服务
 sudo tee /etc/systemd/system/claw-backend.service > /dev/null << SERVICEEOF
@@ -103,16 +89,16 @@ Environment=RUST_LOG=info,api_server=debug
 WantedBy=multi-user.target
 SERVICEEOF
 
-# 前端服务（Next.js SSR）
+# 前端服务
 sudo tee /etc/systemd/system/claw-frontend.service > /dev/null << SERVICEEOF
 [Unit]
-Description=Claw Agent Frontend (Next.js)
+Description=Claw Agent Frontend (Next.js on port ${FRONTEND_PORT})
 After=network.target claw-backend.service
 
 [Service]
 Type=simple
 User=$(whoami)
-WorkingDirectory=${FRONTEND_OUTPUT}
+WorkingDirectory=${DEPLOY_DIR}/frontend
 ExecStart=$(which node) ${DEPLOY_DIR}/frontend/node_modules/.bin/next start -p ${FRONTEND_PORT}
 Restart=on-failure
 RestartSec=5
@@ -127,50 +113,22 @@ echo "  -> /etc/systemd/system/claw-backend.service"
 echo "  -> /etc/systemd/system/claw-frontend.service"
 
 # ──────────────── Step 5: Nginx 配置 ────────────────
-echo "[5/8] 写入 Nginx 配置..."
+echo "[5/5] 写入 Nginx 配置..."
 
 sudo tee /etc/nginx/conf.d/claw.conf > /dev/null << 'NGINXEOF'
-# Claw Agent - claw.ai.accuredit.com
-# SSE 支持: 禁用代理缓冲以实现实时流式传输
-
 upstream claw_backend {
     server 127.0.0.1:18008;
 }
 
 upstream claw_frontend {
-    server 127.0.0.1:3000;
+    server 127.0.0.1:3010;
 }
 
 server {
     listen 80;
     server_name claw.ai.accuredit.com;
 
-    # SSL 配置（获取证书后取消注释）:
-    # listen 443 ssl;
-    # ssl_certificate     /etc/nginx/ssl/claw.ai.accuredit.com.crt;
-    # ssl_certificate_key /etc/nginx/ssl/claw.ai.accuredit.com.key;
-    # return 301 https://$host$request_uri;
-
-    client_max_body_size 50M;
-
-    # API: SSE 流式接口 -> Rust 后端
-    location /v1/chat/completions {
-        proxy_pass http://claw_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # SSE: 禁用缓冲
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 300s;
-        chunked_transfer_encoding on;
-    }
-
-    # API: 其他接口 -> Rust 后端
+    # API -> Rust 后端
     location /v1/ {
         proxy_pass http://claw_backend;
         proxy_http_version 1.1;
@@ -178,7 +136,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 300s;
     }
 
     # 健康检查
@@ -186,20 +144,10 @@ server {
         proxy_pass http://claw_backend;
     }
 
-    # 前端静态资源（直接从构建目录读取）
-    location /_next/static/ {
-        alias /storage/users/agent/claw-code/frontend/static/;
-        expires 365d;
-        access_log off;
-        add_header Cache-Control "public, immutable";
-    }
-
     # 其他请求 -> Next.js SSR
     location / {
         proxy_pass http://claw_frontend;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -209,44 +157,24 @@ server {
 NGINXEOF
 
 echo "  -> /etc/nginx/conf.d/claw.conf"
-
-# ──────────────── Step 6: 设置权限 ────────────────
-echo "[6/8] 设置目录权限..."
-# 获取 nginx 用户（通常是 www-data 或 nginx）
-NGINX_USER=$(grep -E "^user" /etc/nginx/nginx.conf 2>/dev/null | awk '{print $2}' | tr -d ';' || echo "www-data")
-echo "  -> Nginx 用户: ${NGINX_USER}"
-
-# 设置前端目录权限
-sudo chown -R $(whoami):${NGINX_USER} "${FRONTEND_OUTPUT}"
-sudo chmod -R 755 "${FRONTEND_OUTPUT}"
-
-# 确保 nginx 用户对父目录有执行权限
-sudo chmod 755 /storage /storage/users /storage/users/agent /storage/users/agent/claw-code 2>/dev/null || true
-echo "  -> 前端目录权限已设置"
-
-# ──────────────── Step 7: 完成 ────────────────
-echo "[7/8] 部署脚本执行完成"
 echo ""
 echo "============================================"
 echo "  后续操作:"
 echo "============================================"
 echo ""
-echo "  1. 编辑后端环境变量:"
-echo "     vim ${DEPLOY_DIR}/rust/.env"
-echo ""
-echo "  2. 重载 systemd 并启动服务:"
+echo "  1. 重载 systemd 并启动服务:"
 echo "     sudo systemctl daemon-reload"
 echo "     sudo systemctl enable claw-backend claw-frontend"
 echo "     sudo systemctl restart claw-backend"
 echo "     sudo systemctl restart claw-frontend"
 echo ""
-echo "  3. 测试并重载 Nginx:"
+echo "  2. 测试并重载 Nginx:"
 echo "     sudo nginx -t && sudo systemctl reload nginx"
 echo ""
-echo "  4. 初始化用户（可重复执行，已存在会跳过）:"
+echo "  3. 初始化用户（可重复执行，已存在会跳过）:"
 echo "     bash ${DEPLOY_DIR}/scripts/init_users.sh http://127.0.0.1:${BACKEND_PORT}"
 echo ""
-echo "  5. 验证:"
+echo "  4. 验证:"
 echo "     curl http://127.0.0.1:${BACKEND_PORT}/health"
 echo "     curl -I http://${DOMAIN}"
 echo ""
