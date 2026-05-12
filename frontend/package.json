@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",
-    "@lobehub/ui": "^5.10.0",
+    "@ant-design/x": "^2.7.0",
+    "@ant-design/x-sdk": "^2.7.0",
     "@microsoft/fetch-event-source": "^2.0.1",
     "antd": "^6.3.7",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

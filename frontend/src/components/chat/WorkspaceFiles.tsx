@@ -1,7 +1,9 @@
 import React from 'react';
 import { DownloadOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { Button, Tag, Typography } from 'antd';
 import { colors } from '@/styles/tokens';
-import { ActionIcon, Tag, Text } from '@lobehub/ui';
+
+const { Text } = Typography;
 
 interface Props {
   files: string[];
@@ -15,9 +17,7 @@ export const WorkspaceFiles: React.FC<Props> = ({ files, onDownload }) => {
 
   return (
     <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        工作区文件
-      </Text>
+      <Text type="secondary" style={{ fontSize: 12 }}>工作区文件</Text>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {uniqueFiles.map((file) => (
           <div
@@ -39,10 +39,11 @@ export const WorkspaceFiles: React.FC<Props> = ({ files, onDownload }) => {
             >
               {file.split('/').pop() || file}
             </Tag>
-            <ActionIcon
-              icon={DownloadOutlined}
-              onClick={() => onDownload(file)}
+            <Button
+              type="text"
               size="small"
+              icon={<DownloadOutlined />}
+              onClick={() => onDownload(file)}
               title={`下载 ${file}`}
             />
           </div>

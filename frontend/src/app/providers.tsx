@@ -1,10 +1,8 @@
 'use client';
 
 import { useSyncExternalStore, type ReactNode } from 'react';
-import { ThemeProvider } from '@lobehub/ui';
 import { StyleProvider } from '@ant-design/cssinjs';
-
-import { App } from 'antd';
+import { ConfigProvider, App } from 'antd';
 
 const emptySubscribe = () => () => {};
 const clientSnapshot = () => true;
@@ -17,11 +15,18 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <StyleProvider hashPriority="high">
-      <ThemeProvider themeMode="light" customTheme={{ primaryColor: 'volcano' }}>
+      <ConfigProvider
+        theme={{
+          token: {
+            colorPrimary: '#eb6f4b',
+            borderRadius: 8,
+          },
+        }}
+      >
         <App>
           {children}
         </App>
-      </ThemeProvider>
+      </ConfigProvider>
     </StyleProvider>
   );
 }

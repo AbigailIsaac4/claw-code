@@ -1,23 +1,23 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Button, Input, Modal, Typography, Space, Popconfirm, Avatar, App as AntdApp, Tooltip, Radio } from 'antd';
-import { Markdown, DraggablePanel, ActionIcon, Header, Tag as LobeTag, Text as LobeText } from '@lobehub/ui';
-import { ChatList, LoadingDots } from '@lobehub/ui/chat';
+import { Button, Input, Modal, Typography, Space, Avatar, App as AntdApp, Tooltip, Radio, Layout, Tag } from 'antd';
+import { Bubble, Conversations } from '@ant-design/x';
 import { PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, PaperClipOutlined, RobotOutlined, ShareAltOutlined, CopyOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOutlined, FileOutlined, ReloadOutlined } from '@ant-design/icons';
 import { parseMessageContent } from '@/utils/messageParser';
 import { ThinkingBlock } from '@/components/chat/ThinkingBlock';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
 import { WorkspaceFiles } from '@/components/chat/WorkspaceFiles';
-import { ToolRenderer } from '@/components/chat/ToolRenderer';
 import { ChatInputBox } from '@/components/chat/ChatInputBox';
 import { colors } from '@/styles/tokens';
 import { useAuth } from '@/hooks/useAuth';
 import { useSessions } from '@/hooks/useSessions';
 import { useChatStream } from '@/hooks/useChatStream';
 import { useWorkspace } from '@/hooks/useWorkspace';
+import ReactMarkdown from 'react-markdown';
 
 const { Text } = Typography;
+const { Sider, Header, Content } = Layout;
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
@@ -29,7 +29,6 @@ const copyToClipboard = async (text: string): Promise<boolean> => {
       return true;
     }
   } catch {}
-  // Fallback for HTTP / non-secure contexts
   try {
     const textarea = document.createElement('textarea');
     textarea.value = text;
@@ -108,7 +107,6 @@ export default function ChatPage() {
     loadSessionDetail, loadSessions: loadSessionsRaw,
   } = useSessions(token, handleLogout);
 
-  // Wrap loadSessions to pass token automatically
   const loadSessions = (authToken: string) => loadSessionsRaw(authToken);
 
   const {
@@ -117,7 +115,7 @@ export default function ChatPage() {
     loadWorkspaceFiles, downloadWorkspaceFileFromSidebar, downloadWorkspaceFile,
   } = useWorkspace(activeSessionId);
 
-  // --- Local UI state (declared before useChatStream to avoid used-before-declaration) ---
+  // --- Local UI state ---
   const [input, setInput] = useState('');
   const [actionReq, setActionReq] = useState<ActionRequest | null>(null);
   const [questionReq, setQuestionReq] = useState<{
@@ -130,6 +128,7 @@ export default function ChatPage() {
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [agentMode, setAgentMode] = useState<'plan' | 'execute'>('execute');
   const [loading, setLoading] = useState(false);
+  const [isSharedView, setIsSharedView] = useState(false);
 
   const {
     activeToolName, activeToolSummary, sendMessage: sendMessageRaw,
@@ -241,7 +240,6 @@ export default function ChatPage() {
   const sendMessage = () => {
     if ((!input.trim() && uploadedFiles.length === 0) || loadingRef.current || !activeSession || !token) return;
     let finalInput = input;
-    // Resolve /skill_name placeholders to actual skill invocations
     for (const skill of skills) {
       const skillName = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
       finalInput = finalInput.replace(new RegExp(`/${skillName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`, 'g'), `请使用 ${skill.name} 技能$1`);
@@ -277,7 +275,6 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId]);
 
-  // Initialize auth state (including shared session support)
   useEffect(() => {
     queueMicrotask(() => {
       const searchParams = new URLSearchParams(window.location.search);
@@ -285,6 +282,7 @@ export default function ChatPage() {
       const sharedSessionId = searchParams.get('session');
 
       if (isShared && sharedSessionId) {
+        setIsSharedView(true);
         setShowLogin(false);
         void loadSessionDetail(sharedSessionId, '', []);
         return;
@@ -300,7 +298,6 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll session detail while loading (for non-streaming active turns)
   useEffect(() => {
     if (!token || !activeSessionId || !loading) return;
     if (streamingSessionRef.current === activeSessionId) return;
@@ -313,9 +310,24 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId, loading, sessions, token]);
 
+  // --- Conversations items ---
+  const conversationItems = sessions.map(s => ({
+    key: s.id,
+    label: s.title,
+  }));
+
+  const handleConversationMenu = (item: { key: string }) => ({
+    items: [{ key: 'delete', label: '删除', danger: true, icon: <DeleteOutlined /> }],
+    onClick: ({ key }: { key: string }) => {
+      if (key === 'delete') {
+        deleteSession(item.key, {} as React.MouseEvent);
+      }
+    },
+  });
+
   // --- Render ---
   return (
-    <div style={{ height: '100vh', display: 'flex', backgroundColor: colors.bgPrimary }}>
+    <Layout style={{ height: '100vh', background: colors.bgPrimary }}>
 
       {/* Login modal */}
       <Modal
@@ -373,380 +385,395 @@ export default function ChatPage() {
       </Modal>
 
       {/* Left Sidebar */}
-      <DraggablePanel
-        placement="left"
-        minWidth={200}
-        maxWidth={400}
-        defaultSize={{ width: 260 }}
-        expand={leftExpand}
-        onExpandChange={setLeftExpand}
-        expandable
-        style={{ background: colors.bgSecondary, borderRight: `1px solid ${colors.borderMedium}` }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Space>
-              <Avatar shape="square" size={28} style={{ background: colors.accent, color: '#fff', borderRadius: 8 }} icon={<RobotOutlined />} />
-              <Text strong style={{ fontSize: 16 }}>Agent Workspace</Text>
-            </Space>
-            <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setLeftExpand(false)} />
-          </div>
-
-          <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
-            <Button block style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, height: 40, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: 12 }} onClick={createNewSession}>
-              <PlusOutlined style={{ opacity: 0.6 }} /> New Chat
-            </Button>
-          </div>
-
-          <div style={{ padding: '8px 16px' }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>Recent sessions</Text>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {sessions.map(item => {
-                const isActive = item.id === activeSessionId;
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setActiveSessionId(item.id);
-                      if (item.messages.length === 0 && item.title !== 'New Chat') {
-                        void loadSessionDetail(item.id, token!, sessions);
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      margin: '2px 12px',
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                      background: isActive ? colors.bgActive : 'transparent',
-                      borderLeft: isActive ? `3px solid ${colors.accent}` : '3px solid transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'all 0.2s ease',
-                    }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = colors.bgHover }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
-                  >
-                    <Space style={{ overflow: 'hidden', flex: 1 }}>
-                      <Text type="secondary" style={{ color: isActive ? colors.accent : colors.textTertiary }}>#</Text>
-                      <Text ellipsis style={{ width: 140, color: isActive ? '#000' : '#666', fontWeight: isActive ? 600 : 400 }}>
-                        {item.title}
-                      </Text>
-                    </Space>
-                    <Button
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      size="small"
-                      onClick={e => { e.stopPropagation(); deleteSession(item.id, e as React.MouseEvent); }}
-                      style={{ opacity: isActive ? 1 : 0.4 }}
-                    />
-                  </div>
-                );
-              })}
+      {!isSharedView && (
+        <Sider
+          width={260}
+          collapsed={!leftExpand}
+          collapsedWidth={0}
+          theme="light"
+          style={{
+            background: colors.bgSecondary,
+            borderRight: `1px solid ${colors.borderMedium}`,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Space>
+                <Avatar shape="square" size={28} style={{ background: colors.accent, color: '#fff', borderRadius: 8 }} icon={<RobotOutlined />} />
+                <Text strong style={{ fontSize: 16 }}>Agent Workspace</Text>
+              </Space>
+              <Button type="text" size="small" icon={<MenuFoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setLeftExpand(false)} />
             </div>
-          </div>
 
-          {/* User profile bar */}
-          <div style={{ padding: '12px 16px', borderTop: `1px solid ${colors.borderLight}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Avatar size={32} style={{ background: `linear-gradient(135deg, ${colors.info}, #7c3aed)` }} icon={<UserOutlined />} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text strong style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullName}</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>{email || 'Signed in'}</Text>
-            </div>
-            <Tooltip title="Sign out" placement="top">
-              <Button type="text" size="small" onClick={() => { handleLogout(); }} style={{ fontSize: 16, color: colors.textTertiary, padding: '0 4px' }}>
-                <Text type="secondary" style={{ fontSize: 16 }}>⏻</Text>
+            <div style={{ padding: '0 12px', marginBottom: 16 }}>
+              <Button
+                block
+                style={{
+                  textAlign: 'center',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: 8,
+                  height: 40,
+                  background: '#fff',
+                  border: '1px solid rgba(0,0,0,0.06)',
+                  borderRadius: 12,
+                }}
+                onClick={createNewSession}
+              >
+                <PlusOutlined style={{ opacity: 0.6 }} /> New Chat
               </Button>
-            </Tooltip>
+            </div>
+
+            <div style={{ padding: '8px 16px' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>Recent sessions</Text>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              <Conversations
+                items={conversationItems}
+                activeKey={activeSessionId}
+                onActiveChange={(key) => {
+                  setActiveSessionId(key);
+                  const session = sessions.find(s => s.id === key);
+                  if (session && session.messages.length === 0 && session.title !== 'New Chat') {
+                    void loadSessionDetail(key, token!, sessions);
+                  }
+                }}
+                menu={handleConversationMenu}
+                styles={{ item: { borderRadius: 8, margin: '2px 12px' } }}
+              />
+            </div>
+
+            {/* User profile bar */}
+            <div style={{ padding: '12px 16px', borderTop: `1px solid ${colors.borderLight}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Avatar size={32} style={{ background: `linear-gradient(135deg, ${colors.info}, #7c3aed)` }} icon={<UserOutlined />} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Text strong style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullName}</Text>
+                <Text type="secondary" style={{ fontSize: 11 }}>{email || 'Signed in'}</Text>
+              </div>
+              <Tooltip title="Sign out" placement="top">
+                <Button type="text" size="small" onClick={handleLogout} style={{ fontSize: 16, color: colors.textTertiary, padding: '0 4px' }}>
+                  <Text type="secondary" style={{ fontSize: 16 }}>⏻</Text>
+                </Button>
+              </Tooltip>
+            </div>
           </div>
+        </Sider>
+      )}
+
+      {!isSharedView && !leftExpand && (
+        <div style={{ position: 'absolute', left: 0, top: 0, zIndex: 10, padding: 16 }}>
+          <Button type="text" icon={<MenuUnfoldOutlined />} onClick={() => setLeftExpand(true)} />
         </div>
-      </DraggablePanel>
+      )}
 
       {/* Main Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', background: colors.bgPrimary }}>
+      <Layout style={{ background: colors.bgPrimary }}>
         {/* Header */}
-        <Header
-          logo={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-              <Text strong style={{ fontSize: 16 }}>{activeSession?.title || 'Hello'}</Text>
-            </div>
-          }
-          actions={
+        <Header style={{
+          background: colors.bgPrimary,
+          borderBottom: `1px solid ${colors.borderLight}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 24px',
+          height: 56,
+          lineHeight: '56px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+            {!leftExpand && !isSharedView && (
+              <Button type="text" icon={<MenuUnfoldOutlined />} onClick={() => setLeftExpand(true)} style={{ marginRight: 4 }} />
+            )}
+            <Avatar shape="square" size={28} style={{ background: colors.accent, color: '#fff', borderRadius: 8 }} icon={<RobotOutlined />} />
+            <Text strong style={{ fontSize: 16 }}>{isSharedView ? 'Claw Agent' : (activeSession?.title || 'Hello')}</Text>
+          </div>
+          {isSharedView ? (
+            <Button type="primary" size="small" onClick={() => { window.location.href = '/'; }}>Sign in</Button>
+          ) : (
             <Space style={{ whiteSpace: 'nowrap' }}>
-              <ActionIcon
-                icon={ShareAltOutlined}
-                title="Copy share link"
-                onClick={async () => {
-                  const shareUrl = `${window.location.origin}/?session=${activeSession?.id}&share=true`;
-                  if (await copyToClipboard(shareUrl)) {
-                    message.success('Share link copied to clipboard.');
-                  } else {
-                    message.error('Failed to copy share link');
-                  }
-                }}
-              />
+              <Tooltip title="Copy share link">
+                <Button
+                  type="text"
+                  icon={<ShareAltOutlined />}
+                  onClick={async () => {
+                    const shareUrl = `${window.location.origin}/?session=${activeSession?.id}&share=true`;
+                    if (await copyToClipboard(shareUrl)) {
+                      message.success('Share link copied to clipboard.');
+                    } else {
+                      message.error('Failed to copy share link');
+                    }
+                  }}
+                />
+              </Tooltip>
             </Space>
-          }
-        />
+          )}
+        </Header>
 
         {/* Chat Area */}
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-          <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {(!activeSession || activeSession.messages.length === 0) && (
-              <div style={{ textAlign: 'center', marginTop: 120 }}>
-                <RobotOutlined style={{ fontSize: 48, color: colors.accent, marginBottom: 16 }} />
-                <Typography.Title level={3} style={{ color: '#333', marginBottom: 4 }}>Claw Agent</Typography.Title>
-                <Text type="secondary" style={{ display: 'block', fontSize: 14 }}>
-                  I can write code, run commands, analyze files, and more.
-                </Text>
-              </div>
-            )}
-
-            {activeSession && activeSession.messages.length > 0 && (
-              <ChatList
-                data={activeSession.messages.map(msg => {
-                  const parsed = parseMessageContent(msg.content || '');
-                  return {
-                    id: msg.id,
-                    role: msg.role === 'user' ? 'user' : 'assistant',
-                    content: msg.content || ' ',
-                    meta: msg.role === 'user' ? {
-                      title: '',
-                      avatar: <></>,
-                    } : {
-                      avatar: <RobotOutlined />,
-                      title: 'Agent',
-                      backgroundColor: colors.accent,
-                    },
-                    extra: {
-                      toolCalls: msg.toolCalls,
-                      parsed
-                    }
-                  } as unknown as NonNullable<React.ComponentProps<typeof ChatList>['data']>[number]
-                })}
-                renderMessages={{
-                  user: ({ content }) => {
-                    const uploadedFilesPrompt = parseUploadedWorkspacePrompt(content);
-                    const handleCopy = async () => {
-                      if (await copyToClipboard(content)) {
-                        message.success('Copied to clipboard');
-                      } else {
-                        message.error('Copy failed');
-                      }
-                    };
-                    if (uploadedFilesPrompt) {
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-                          {uploadedFilesPrompt.cleanContent && (
-                            <div style={{ whiteSpace: 'pre-wrap' }}>{uploadedFilesPrompt.cleanContent}</div>
-                          )}
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            {uploadedFilesPrompt.files.map((filePath) => {
-                              const displayName = filePath.split('/').pop() || filePath;
-                              return (
-                                <div
-                                  key={filePath}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 8,
-                                    padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 8,
-                                  }}
-                                >
-                                  <PaperClipOutlined style={{ color: colors.info, fontSize: 16 }} />
-                                  <Text strong style={{ fontSize: 13 }}>{displayName}</Text>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} style={{ opacity: 0.5 }} />
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="msg-hover-copy" style={{ position: 'relative' }}>
-                        <div style={{ whiteSpace: 'pre-wrap', paddingRight: 28 }}>{content}</div>
-                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0, transition: 'opacity 0.15s' }} />
-                      </div>
-                    );
-                  },
-                  assistant: ({ extra, content }) => {
-                    const parsed = extra?.parsed;
-                    const handleCopyAssistant = async () => {
-                      const text = parsed?.cleanContent || content || '';
-                      if (await copyToClipboard(text)) {
-                        message.success('Copied to clipboard');
-                      } else {
-                        message.error('Copy failed');
-                      }
-                    };
-                    return (
-                      <div className="msg-hover-copy" style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
-                        <ThinkingBlock content={parsed?.thinkingBlock} />
-                        <div style={{ paddingRight: 28 }}>
-                          <Markdown>{parsed?.cleanContent || ''}</Markdown>
-                        </div>
-                        <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopyAssistant} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0, transition: 'opacity 0.15s' }} />
-                      </div>
-                    );
-                  }
-                }}
-                renderMessagesExtra={{
-                  assistant: ({ extra }) => {
-                    const parsed = extra?.parsed;
-                    const tools = extra?.toolCalls;
-                    if (!parsed && !tools) return null;
-                    return (
-                      <div style={{ marginTop: 8 }}>
-                        <PlanStepsCard
-                          steps={parsed?.planSteps || []}
-                          onExecuteStep={(fullBlock) => {
-                            setInput(`Please execute the following step:\n\n${fullBlock}`);
-                            setAgentMode('execute');
-                          }}
-                        />
-                        <WorkspaceFiles
-                          files={parsed?.workspaceFiles || []}
-                          onDownload={downloadWorkspaceFile}
-                        />
-                        {tools && tools.length > 0 && (
-                          <ToolRenderer toolCalls={tools} />
-                        )}
-                      </div>
-                    );
-                  }
-                }}
-              />
-            )}
-
-            {loading && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 8 }}>
-                <LoadingDots size={4} variant="typing" />
-                {activeToolName ? (
-                  <LobeText type="secondary" italic>
-                    Running <Text strong style={{ fontWeight: 600 }}>{activeToolName}</Text>
-                    {activeToolSummary && <span> — {activeToolSummary}</span>}
-                  </LobeText>
-                ) : (
-                  <LobeText type="secondary" italic>Agent is thinking...</LobeText>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Input Area */}
-        <div style={{ padding: '0 24px 32px', background: 'transparent' }}>
-          {uploadedFiles.length > 0 && (
-            <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {uploadedFiles.map(f => (
-                <LobeTag
-                  key={f}
-                  closable
-                  onClose={() => setUploadedFiles(prev => prev.filter(p => p !== f))}
-                  icon={<PaperClipOutlined />}
-                  color="blue"
-                  style={{ padding: '4px 10px', borderRadius: 16, fontSize: 13 }}
-                >
-                  {f.split('/').pop()}
-                </LobeTag>
-              ))}
-            </div>
-          )}
-          <ChatInputBox
-            input={input}
-            setInput={setInput}
-            loading={loading}
-            onSend={sendMessage}
-            agentMode={agentMode}
-            setAgentMode={setAgentMode}
-            onFileUpload={handleFileUpload}
-            skills={skills}
-          />
-        </div>
-      </div>
-
-      {/* Right Sidebar: Workspace */}
-      <DraggablePanel
-        placement="right"
-        minWidth={200}
-        maxWidth={400}
-        defaultSize={{ width: 300 }}
-        expand={rightExpand}
-        onExpandChange={setRightExpand}
-        expandable
-        style={{ background: colors.bgPrimary }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ padding: '12px 16px', borderBottom: `1px solid ${colors.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text strong style={{ fontSize: 15 }}>Workspace</Text>
-            <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
-          </div>
-
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colors.bgTertiary }}>
-              <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Files {workspaceSubPath && `/ ${workspaceSubPath}`}
-              </Text>
-              <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => loadWorkspaceFiles(workspaceSubPath || undefined)} loading={workspaceFilesLoading} />
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-              {workspaceSubPath && (
-                <div
-                  style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1677ff' }}
-                  onClick={() => { setWorkspaceSubPath(''); void loadWorkspaceFiles(); }}
-                >
-                  <FolderOutlined /> ..
-                </div>
-              )}
-              {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
-                <div style={{ textAlign: 'center', padding: '24px 16px' }}>
-                  <FolderOutlined style={{ fontSize: 32, color: colors.border, marginBottom: 8 }} />
-                  <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-                    {!activeSessionId ? 'Select a session' : workspaceSubPath === 'output' ? 'No result files yet' : 'No files in this folder'}
+        <Content style={{ display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+            <div style={{ maxWidth: 800, margin: '0 auto' }}>
+              {(!activeSession || activeSession.messages.length === 0) && (
+                <div style={{ textAlign: 'center', marginTop: 120 }}>
+                  <RobotOutlined style={{ fontSize: 48, color: colors.accent, marginBottom: 16 }} />
+                  <Typography.Title level={3} style={{ color: '#333', marginBottom: 4 }}>Claw Agent</Typography.Title>
+                  <Text type="secondary" style={{ display: 'block', fontSize: 14 }}>
+                    I can write code, run commands, analyze files, and more.
                   </Text>
                 </div>
-              ) : (
-                workspaceFiles.map((file, idx) => (
-                  <Tooltip key={idx} title={file.is_dir ? 'Open folder' : 'Click to download'} placement="left">
-                    <div
-                      style={{
-                        padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center',
-                        gap: 8, fontSize: 13, borderRadius: 4, margin: '1px 4px',
-                      }}
-                      className="workspace-file-item"
-                      onClick={() => {
-                        if (file.is_dir) {
-                          setWorkspaceSubPath(file.path);
-                          void loadWorkspaceFiles(file.path);
-                        } else {
-                          downloadWorkspaceFileFromSidebar(file.path);
+              )}
+
+              {activeSession && activeSession.messages.length > 0 && (
+                <Bubble.List
+                  autoScroll
+                  role={{
+                    user: {
+                      placement: 'end',
+                      variant: 'filled',
+                      contentRender: (content: string) => {
+                        const uploadedFilesPrompt = parseUploadedWorkspacePrompt(content);
+                        const handleCopy = async () => {
+                          if (await copyToClipboard(content)) {
+                            message.success('Copied to clipboard');
+                          } else {
+                            message.error('Copy failed');
+                          }
+                        };
+                        if (uploadedFilesPrompt) {
+                          return (
+                            <div className="msg-hover-copy" style={{ position: 'relative' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+                                {uploadedFilesPrompt.cleanContent && (
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>{uploadedFilesPrompt.cleanContent}</div>
+                                )}
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                  {uploadedFilesPrompt.files.map((filePath) => {
+                                    const displayName = filePath.split('/').pop() || filePath;
+                                    return (
+                                      <div key={filePath} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 8 }}>
+                                        <PaperClipOutlined style={{ color: colors.info, fontSize: 16 }} />
+                                        <Text strong style={{ fontSize: 13 }}>{displayName}</Text>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: -8, right: -8, opacity: 0, transition: 'opacity 0.15s' }} />
+                            </div>
+                          );
                         }
-                      }}
-                    >
-                      {file.is_dir ? (
-                        <FolderOutlined style={{ color: colors.warning, fontSize: 14 }} />
-                      ) : (
-                        <FileOutlined style={{ color: colors.textSecondary, fontSize: 14 }} />
-                      )}
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {file.name}
-                      </span>
-                      {!file.is_dir && (
-                        <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-                          {file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(1)}K` : `${(file.size / 1048576).toFixed(1)}M`}
-                        </Text>
-                      )}
-                    </div>
-                  </Tooltip>
-                ))
+                        return (
+                          <div className="msg-hover-copy" style={{ position: 'relative' }}>
+                            <div style={{ whiteSpace: 'pre-wrap', paddingRight: 28 }}>{content}</div>
+                            <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0, transition: 'opacity 0.15s' }} />
+                          </div>
+                        );
+                      },
+                    },
+                    ai: {
+                      placement: 'start',
+                      avatar: <Avatar icon={<RobotOutlined />} style={{ background: colors.accent }} />,
+                      contentRender: (content: string, info) => {
+                        const parsed = parseMessageContent(content || '');
+                        const isStreaming = info.status === 'loading' || info.status === 'updating';
+                        const handleCopy = async () => {
+                          if (await copyToClipboard(parsed.cleanContent)) {
+                            message.success('Copied to clipboard');
+                          } else {
+                            message.error('Copy failed');
+                          }
+                        };
+                        return (
+                          <div className="msg-hover-copy" style={{ wordBreak: 'break-word', lineHeight: 1.6, position: 'relative' }}>
+                            <ThinkingBlock content={parsed.thinkingBlock} isStreaming={isStreaming} />
+                            <div style={{ paddingRight: 28 }}>
+                              <ReactMarkdown>{parsed.cleanContent || ''}</ReactMarkdown>
+                            </div>
+                            <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0, transition: 'opacity 0.15s' }} />
+                          </div>
+                        );
+                      },
+                      footer: (content: string) => {
+                        const parsed = parseMessageContent(content || '');
+                        if (parsed.planSteps.length < 2 && parsed.workspaceFiles.length === 0) return null;
+                        return (
+                          <div>
+                            <PlanStepsCard
+                              steps={parsed.planSteps}
+                              onExecuteStep={(fullBlock) => {
+                                setInput(`Please execute the following step:\n\n${fullBlock}`);
+                                setAgentMode('execute');
+                              }}
+                            />
+                            <WorkspaceFiles
+                              files={parsed.workspaceFiles}
+                              onDownload={downloadWorkspaceFile}
+                            />
+                          </div>
+                        );
+                      },
+                    },
+                  }}
+                  items={activeSession.messages.map(msg => ({
+                    key: msg.id,
+                    role: msg.role === 'user' ? 'user' : 'ai',
+                    content: msg.content || ' ',
+                    loading: loading && activeSession.messages[activeSession.messages.length - 1]?.id === msg.id,
+                  }))}
+                />
+              )}
+
+              {/* Loading indicator for non-streaming loading */}
+              {loading && (!activeSession || activeSession.messages.length === 0) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 8, padding: '8px 0' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: colors.accent, opacity: 0.6, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }} />
+                    ))}
+                  </div>
+                  {activeToolName ? (
+                    <Text type="secondary" italic>
+                      Running <Text strong style={{ fontWeight: 600 }}>{activeToolName}</Text>
+                      {activeToolSummary && <span> — {activeToolSummary}</span>}
+                    </Text>
+                  ) : (
+                    <Text type="secondary" italic>Agent is thinking...</Text>
+                  )}
+                </div>
               )}
             </div>
           </div>
+
+          {/* Input Area / Shared View CTA */}
+          {isSharedView ? (
+            <div style={{ padding: '24px 32px', textAlign: 'center', borderTop: `1px solid ${colors.borderLight}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
+                <RobotOutlined style={{ fontSize: 18, color: colors.accent }} />
+                <Text type="secondary" style={{ fontSize: 14 }}>Want to try it out?</Text>
+              </div>
+              <Button type="primary" onClick={() => { window.location.href = '/'; }}>
+                Sign in to get started
+              </Button>
+            </div>
+          ) : (
+            <div style={{ padding: '0 24px 32px', background: 'transparent' }}>
+              {uploadedFiles.length > 0 && (
+                <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {uploadedFiles.map(f => (
+                    <Tag
+                      key={f}
+                      closable
+                      onClose={() => setUploadedFiles(prev => prev.filter(p => p !== f))}
+                      icon={<PaperClipOutlined />}
+                      color="blue"
+                      style={{ padding: '4px 10px', borderRadius: 16, fontSize: 13 }}
+                    >
+                      {f.split('/').pop()}
+                    </Tag>
+                  ))}
+                </div>
+              )}
+              <ChatInputBox
+                input={input}
+                setInput={setInput}
+                loading={loading}
+                onSend={sendMessage}
+                agentMode={agentMode}
+                setAgentMode={setAgentMode}
+                onFileUpload={handleFileUpload}
+                skills={skills}
+              />
+            </div>
+          )}
+        </Content>
+      </Layout>
+
+      {/* Right Sidebar: Workspace */}
+      {!isSharedView && (
+        <Sider
+          width={300}
+          collapsed={!rightExpand}
+          collapsedWidth={0}
+          theme="light"
+          style={{ background: colors.bgPrimary, overflow: 'hidden' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '12px 16px', borderBottom: `1px solid ${colors.borderLight}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text strong style={{ fontSize: 15 }}>Workspace</Text>
+              <Button type="text" size="small" icon={<MenuUnfoldOutlined />} style={{ opacity: 0.4 }} onClick={() => setRightExpand(false)} />
+            </div>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colors.bgTertiary }}>
+                <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Files {workspaceSubPath && `/ ${workspaceSubPath}`}
+                </Text>
+                <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => loadWorkspaceFiles(workspaceSubPath || undefined)} loading={workspaceFilesLoading} />
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+                {workspaceSubPath && (
+                  <div
+                    style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1677ff' }}
+                    onClick={() => { setWorkspaceSubPath(''); void loadWorkspaceFiles(); }}
+                  >
+                    <FolderOutlined /> ..
+                  </div>
+                )}
+                {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
+                  <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+                    <FolderOutlined style={{ fontSize: 32, color: colors.border, marginBottom: 8 }} />
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+                      {!activeSessionId ? 'Select a session' : workspaceSubPath === 'output' ? 'No result files yet' : 'No files in this folder'}
+                    </Text>
+                  </div>
+                ) : (
+                  workspaceFiles.map((file, idx) => (
+                    <Tooltip key={idx} title={file.is_dir ? 'Open folder' : 'Click to download'} placement="left">
+                      <div
+                        style={{
+                          padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center',
+                          gap: 8, fontSize: 13, borderRadius: 4, margin: '1px 4px',
+                        }}
+                        className="workspace-file-item"
+                        onClick={() => {
+                          if (file.is_dir) {
+                            setWorkspaceSubPath(file.path);
+                            void loadWorkspaceFiles(file.path);
+                          } else {
+                            downloadWorkspaceFileFromSidebar(file.path);
+                          }
+                        }}
+                      >
+                        {file.is_dir ? (
+                          <FolderOutlined style={{ color: colors.warning, fontSize: 14 }} />
+                        ) : (
+                          <FileOutlined style={{ color: colors.textSecondary, fontSize: 14 }} />
+                        )}
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {file.name}
+                        </span>
+                        {!file.is_dir && (
+                          <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                            {file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(1)}K` : `${(file.size / 1048576).toFixed(1)}M`}
+                          </Text>
+                        )}
+                      </div>
+                    </Tooltip>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </Sider>
+      )}
+
+      {!isSharedView && !rightExpand && (
+        <div style={{ position: 'absolute', right: 0, top: 0, zIndex: 10, padding: 16 }}>
+          <Button type="text" icon={<MenuFoldOutlined />} onClick={() => setRightExpand(true)} />
         </div>
-      </DraggablePanel>
+      )}
 
       {/* Action Prompt Modal */}
       <Modal
@@ -811,7 +838,6 @@ export default function ChatPage() {
         </Space>
       </Modal>
 
-
-    </div>
+    </Layout>
   );
 }

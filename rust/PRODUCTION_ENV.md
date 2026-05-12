@@ -64,6 +64,7 @@ ENV PATH="/opt/miniconda3/bin:/usr/local/nodejs/bin:${PATH}"
 [Service]
 Environment="PATH=/opt/miniconda3/bin:/usr/local/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="CLAW_WORKSPACE_ROOT=/data/workspaces"
+Environment="DATABASE_PATH=/data/claw_agent.db"
 Environment="OPENAI_API_KEY=sk-xxx"
 Environment="OPENAI_BASE_URL=https://api.openai.com/v1"
 ExecStart=/usr/local/bin/api-server
@@ -123,7 +124,7 @@ sysctl -w kernel.unprivileged_userns_clone=1
 | `OPENAI_API_KEY` | (required) | API key for LLM provider |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | LLM provider base URL |
 | `OPENAI_MODEL_NAME` | `qwen` | Model name sent to provider |
-| `DATABASE_URL` | `sqlite:./data/claw.db` | SQLite database path |
+| `DATABASE_PATH` | `./claw_agent.db` | SQLite database file path |
 | `JWT_SECRET` | (random per start) | JWT signing secret |
 | `CLAW_SKILLS_ROOT` | auto-detected | Skills directory path (auto-detects `assets/skills/` from CWD) |
 
@@ -144,7 +145,7 @@ services:
       OPENAI_API_KEY: sk-xxx
       OPENAI_BASE_URL: https://api.openai.com/v1
       OPENAI_MODEL_NAME: qwen
-      DATABASE_URL: sqlite:/data/claw.db
+      DATABASE_PATH: /data/claw_agent.db
       PORT: "18008"
     # For sandbox support (Linux only)
     # security_opt:

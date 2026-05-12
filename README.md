@@ -221,6 +221,7 @@ OPENAI_BASE_URL=http://your-llm-endpoint/v1
 OPENAI_API_KEY=your-api-key
 OPENAI_MODEL_NAME=your-model
 CLAW_WORKSPACE_ROOT=./data/workspaces
+DATABASE_PATH=./data/claw_agent.db
 ```
 
 ### Run
@@ -232,7 +233,7 @@ cd rust
 
 # Frontend (in another terminal)
 cd frontend
-API_INTERNAL_BASE_URL=http://127.0.0.1:18008 npx next start -p 3000
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18008 npx next start --hostname 127.0.0.1 --port 3000
 ```
 
 ### Initialize users
@@ -243,10 +244,11 @@ bash scripts/init_users.sh http://127.0.0.1:18008
 
 ### Production deployment
 
-See [`scripts/deploy.sh`](./scripts/deploy.sh) for systemd services, Nginx config with SSE support, and full deployment automation. Default setup: backend on port 18008, frontend on port 3000, Nginx reverse proxy with custom domain.
+For a manual Linux deployment using `systemd` and Nginx, see [`docs/deployment.md`](./docs/deployment.md). It documents the current backend/frontend service setup, SSE proxying, and same-origin `/v1/` routing without wrapper scripts.
 
 ## Documentation map
 
+- [docs/deployment.md](./docs/deployment.md) - manual Linux deployment with systemd + Nginx
 - [`USAGE.md`](./USAGE.md) — quick commands, auth, sessions, config, parity harness
 - [`rust/README.md`](./rust/README.md) — crate map, CLI surface, features, workspace layout
 - [`PARITY.md`](./PARITY.md) — parity status for the Rust port
