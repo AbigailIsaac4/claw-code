@@ -30,6 +30,13 @@ echo "[0/5] Preparing directories..."
 mkdir -p "${DEPLOY_DIR}/rust/data/workspaces"
 mkdir -p "${DEPLOY_DIR}/logs"
 
+# Backup database before deploy (if it exists)
+DB_FILE="${DEPLOY_DIR}/rust/claw_agent.db"
+if [ -f "$DB_FILE" ]; then
+    cp "$DB_FILE" "${DB_FILE}.bak.$(date +%Y%m%d%H%M%S)"
+    echo "  -> Backed up database to ${DB_FILE}.bak.*"
+fi
+
 # ─────────────────────────────────────────────
 # Step 1: Build Rust backend
 # ─────────────────────────────────────────────
