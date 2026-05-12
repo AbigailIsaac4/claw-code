@@ -6,8 +6,12 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Claw Web Agent",
-  description: "Web interface for Claw Code Agent",
+  title: "Claw Agent",
+  description: "AI-powered coding agent",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

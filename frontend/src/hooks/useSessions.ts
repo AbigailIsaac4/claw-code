@@ -56,8 +56,8 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
     setActiveSessionId(newSession.id);
   }, []);
 
-  const deleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const deleteSession = useCallback(async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation?.();
     try {
       await fetch(apiUrl(`/v1/sessions/${id}`), {
         method: 'DELETE',

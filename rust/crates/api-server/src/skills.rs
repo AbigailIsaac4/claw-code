@@ -25,20 +25,21 @@ pub fn cached_skills() -> &'static [SkillInfo] {
 }
 
 /// Build a system prompt snippet about available skills for the LLM.
-/// Does NOT list all skills (too many tokens). Instead, tells the LLM
-/// that skills exist and how to discover/use them on demand.
+/// Lists all skills with names and descriptions so the LLM knows what is available
+/// and can respond to `/skillname` triggers from the user.
 pub fn build_skills_system_prompt() -> Option<String> {
     let skills = cached_skills();
     if skills.is_empty() {
         return None;
     }
-    let count = skills.len();
-    Some(format!(
-        "There are {count} skills available in the workspace. \
-         Use the Skill tool to load a skill by name when a task matches its domain. \
-         Skill names are lowercase-kebab-case (e.g. 'code-review', 'api-design'). \
-         If unsure which skill to use, call Skill with a likely name and it will resolve or suggest alternatives."
-    ))
+    let mut prompt = String::from("The following skills are available. \
+        When the user references a skill by name (e.g. /skillname), load the corresponding skill using the Skill tool. \
+        If a user request matches a skill's domain, proactively suggest using it.\n\n");
+    for s in skills {
+        use std::fmt::Write;
+        let _ = writeln!(prompt, "- **{}**: {}", s.name, s.description);
+    }
+    Some(prompt)
 }
 
 pub async fn list_skills() -> Json<Value> {

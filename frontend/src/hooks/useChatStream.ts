@@ -42,7 +42,7 @@ interface UseChatStreamProps {
   loadSessionDetail: (id: string, authToken: string, sessionList: SessionSummary[]) => Promise<void>;
   loadWorkspaceFiles: (subPath?: string) => Promise<void>;
   workspaceSubPath: string;
-  agentMode: 'plan' | 'execute';
+  agentMode?: 'plan' | 'execute';
   onError?: (msg: string) => void;
   onActionRequired?: (req: ActionRequest) => void;
   onQuestionRequired?: (data: { question_id: string; question: string; options?: string[] }) => void;
@@ -63,7 +63,7 @@ export function useChatStream({
   loadSessionDetail,
   loadWorkspaceFiles,
   workspaceSubPath,
-  agentMode,
+  agentMode = 'execute',
   onError,
   onActionRequired,
   onQuestionRequired,

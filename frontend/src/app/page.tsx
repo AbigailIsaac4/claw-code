@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useRef, useEffect, memo, createContext, useContext } from 'react';
-import { Button, Input, Modal, Typography, Space, Avatar, App as AntdApp, Tooltip, Radio, Tag, theme, Flex } from 'antd';
-import { Bubble, Conversations, Welcome, Prompts, Sender, Think, ThoughtChain, Actions } from '@ant-design/x';
+import { Button, Input, Modal, Typography, Space, Avatar, App as AntdApp, Tooltip, Radio, Tag, theme, Flex, Popover } from 'antd';
+import { Bubble, Conversations, Welcome, Sender, Think, ThoughtChain, Actions } from '@ant-design/x';
 import type { BubbleListProps } from '@ant-design/x';
 import {
-  PlusOutlined, DeleteOutlined, UserOutlined, LockOutlined, PaperClipOutlined,
-  RobotOutlined, ShareAltOutlined, CopyOutlined, FolderOutlined, FileOutlined,
-  ReloadOutlined, GlobalOutlined, SyncOutlined, CodeOutlined, ThunderboltOutlined,
-  FileSearchOutlined, RocketOutlined,
+  DeleteOutlined, UserOutlined, LockOutlined, PaperClipOutlined,
+  RobotOutlined, CopyOutlined, FolderOutlined, FileOutlined,
+  ReloadOutlined, GlobalOutlined, SyncOutlined, AppstoreOutlined,
 } from '@ant-design/icons';
 import { createStyles } from 'antd-style';
 import { parseMessageContent } from '@/utils/messageParser';
@@ -96,11 +95,6 @@ const useStyle = createStyles(({ token, css }) => ({
       background-position: bottom;
     }
   `,
-  chatPrompt: css`
-    .ant-prompts-label { color: ${token.colorText} !important; }
-    .ant-prompts-desc { color: ${token.colorTextSecondary} !important; width: 100%; }
-    .ant-prompts-icon { color: ${token.colorTextSecondary} !important; }
-  `,
   chatList: css`
     flex: 1; overflow-y: auto;
     display: flex; flex-direction: column; align-items: center; width: 100%;
@@ -110,9 +104,6 @@ const useStyle = createStyles(({ token, css }) => ({
   `,
   sender: css`
     width: 100%; max-width: 840px; margin: 0 auto;
-  `,
-  senderPrompt: css`
-    width: 100%; max-width: 840px; margin: 0 auto; color: ${token.colorText};
   `,
 }));
 
@@ -204,20 +195,19 @@ export default function ChatPage() {
   const [questionAnswer, setQuestionAnswer] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
-  const [agentMode] = useState<'plan' | 'execute'>('execute');
   const [loading, setLoading] = useState(false);
   const [isSharedView, setIsSharedView] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
 
   const {
-    activeToolName, activeToolSummary, sendMessage: sendMessageRaw,
+    sendMessage: sendMessageRaw,
   } = useChatStream({
     token: authToken, sessions, activeSessionId, activeSession,
     setSessions, setActiveSessionId,
     streamingSessionRef, loadingRef, setLoading,
     withAssistantTail, updateSessionMessages,
     loadSessionDetail, loadWorkspaceFiles,
-    workspaceSubPath, agentMode,
+    workspaceSubPath,
     onError: (msg) => message.error(msg),
     onActionRequired: (data) => setActionReq(data),
     onQuestionRequired: (data) => { setQuestionReq(data); setQuestionAnswer(''); },
@@ -324,30 +314,15 @@ export default function ChatPage() {
   // --- Conversations ---
   const conversationItems = sessions.map(s => ({ key: s.id, label: s.title }));
 
-  // --- Prompt items ---
-  const PROMPT_ITEMS = [
-    { key: '1', description: 'Write & review code', icon: <CodeOutlined /> },
-    { key: '2', description: 'Debug & fix errors', icon: <ThunderboltOutlined /> },
-    { key: '3', description: 'Analyze workspace files', icon: <FileSearchOutlined /> },
-    { key: '4', description: 'Run shell commands', icon: <RocketOutlined /> },
-  ];
-
-  const WELCOME_PROMPTS = [
-    {
-      key: '1', label: 'Quick Start',
-      children: [
-        { key: '1-1', description: 'What can you do?', icon: <span style={{ color: token.colorPrimary, fontWeight: 700 }}>1</span> },
-        { key: '1-2', description: 'Help me write a script', icon: <span style={{ color: '#ff6565', fontWeight: 700 }}>2</span> },
-      ],
-    },
-    {
-      key: '2', label: 'Capabilities',
-      children: [
-        { key: '2-1', icon: <CodeOutlined />, label: 'Code', description: 'Generate, refactor, and review code' },
-        { key: '2-2', icon: <RocketOutlined />, label: 'Execute', description: 'Run commands and scripts' },
-      ],
-    },
-  ];
+  // --- Skill selector state ---
+  const [skillPopupOpen, setSkillPopupOpen] = useState(false);
+  const [skillFilter, setSkillFilter] = useState('');
+  const skillsFiltered = skillFilter
+    ? skills.filter(s => {
+        const sn = s.name.includes('/') ? s.name.split('/').pop()! : s.name;
+        return sn.toLowerCase().includes(skillFilter.toLowerCase());
+      })
+    : skills;
 
   // --- Bubble role config ---
   const bubbleRole: BubbleListProps['role'] = {
@@ -385,7 +360,7 @@ export default function ChatPage() {
     },
     ai: {
       placement: 'start',
-      avatar: <Avatar icon={<RobotOutlined />} style={{ background: token.colorPrimary }} />,
+      avatar: <Avatar icon={<RobotOutlined />} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)`, flexShrink: 0 }} />,
       header: (_content: string, info) => {
         const cfg = STATUS_CONFIG[info.status as string];
         if (!cfg) return null;
@@ -437,7 +412,7 @@ export default function ChatPage() {
   const sider = !isSharedView && (
     <div className={styles.sider}>
       <div className={styles.logo}>
-        <Avatar shape="square" size={28} style={{ background: token.colorPrimary, borderRadius: 6 }} icon={<RobotOutlined />} />
+        <Avatar shape="square" size={30} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)`, borderRadius: 8 }} icon={<RobotOutlined />} />
         <span>Claw Agent</span>
       </div>
       <Conversations
@@ -454,7 +429,7 @@ export default function ChatPage() {
         styles={{ item: { padding: '0 8px', borderRadius: token.borderRadius } }}
         menu={(item) => ({
           items: [{ label: '删除', key: 'delete', icon: <DeleteOutlined />, danger: true }],
-          onClick: ({ key }: { key: string }) => { if (key === 'delete') deleteSession(item.key, {} as React.MouseEvent); },
+          onClick: ({ key }: { key: string }) => { if (key === 'delete') deleteSession(item.key); },
         })}
       />
       <div className={styles.sideFooter}>
@@ -486,65 +461,150 @@ export default function ChatPage() {
           role={bubbleRole}
         />
       ) : (
-        <Flex vertical style={{ maxWidth: 840 }} gap={16} align="center" className={styles.placeholder}>
+        <Flex vertical style={{ maxWidth: 840, flex: 1, justifyContent: 'center' }} gap={16} align="center" className={styles.placeholder}>
           <Welcome
             variant="borderless"
-            icon={<RobotOutlined style={{ fontSize: 48, color: token.colorPrimary }} />}
+            icon={<Avatar size={56} icon={<RobotOutlined style={{ fontSize: 32 }} />} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)` }} />}
             title="Hello, I'm Claw Agent"
-            description="I can write code, run commands, analyze files, and more. Start a conversation below."
+            description="I can write code, run commands, analyze files, and more. Start a conversation below or type / to select a skill."
           />
-          <Flex gap={16}>
-            <Prompts
-              items={[WELCOME_PROMPTS[0]]}
-              styles={{
-                list: { height: '100%' },
-                item: { flex: 1, backgroundImage: `linear-gradient(123deg, ${token.colorPrimaryBg} 0%, #efe7ff 100%)`, borderRadius: 12, border: 'none' },
-                subItem: { padding: 0, background: 'transparent' },
-              }}
-              onItemClick={(info) => { if (info.data.description) sendMessage(info.data.description as string); }}
-              className={styles.chatPrompt}
-            />
-            <Prompts
-              items={[WELCOME_PROMPTS[1]]}
-              styles={{
-                item: { flex: 1, backgroundImage: `linear-gradient(123deg, ${token.colorPrimaryBg} 0%, #efe7ff 100%)`, borderRadius: 12, border: 'none' },
-                subItem: { background: token.colorBgContainer },
-              }}
-              onItemClick={(info) => { if (info.data.description) sendMessage(info.data.description as string); }}
-              className={styles.chatPrompt}
-            />
-          </Flex>
         </Flex>
       )}
     </div>
   );
 
   // --- Sender ---
+  const handleInputChange = (val: string) => {
+    setInput(val);
+    // Detect "/" to trigger skill autocomplete
+    const lastSlashIdx = val.lastIndexOf('/');
+    if (lastSlashIdx >= 0) {
+      const afterSlash = val.slice(lastSlashIdx + 1);
+      if (!afterSlash.includes(' ') && val.length > lastSlashIdx) {
+        setSkillFilter(afterSlash);
+        setSkillPopupOpen(true);
+      } else {
+        setSkillPopupOpen(false);
+      }
+    } else {
+      setSkillPopupOpen(false);
+    }
+  };
+
+  const selectSkill = (skill: SkillInfo) => {
+    const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
+    const lastSlashIdx = input.lastIndexOf('/');
+    const newInput = input.slice(0, lastSlashIdx) + `/${sn} `;
+    setInput(newInput);
+    setSkillPopupOpen(false);
+    setSkillFilter('');
+    // Focus back on sender input
+    setTimeout(() => {
+      const senderInput = document.querySelector('.ant-sender-input') as HTMLTextAreaElement;
+      senderInput?.focus();
+    }, 0);
+  };
+
   const chatSender = !isSharedView && (
-    <Flex vertical gap={12} justify="center" style={{ marginInline: 24 }}>
-      <Prompts
-        items={PROMPT_ITEMS}
-        onItemClick={(info) => { setInput(info.data.description as string); }}
-        styles={{ item: { padding: '6px 12px' } }}
-        className={styles.senderPrompt}
-      />
+    <div style={{ marginInline: 24, maxWidth: 840, width: '100%', alignSelf: 'center' }}>
+      {/* Skill popup */}
+      {skillPopupOpen && skillsFiltered.length > 0 && (
+        <div style={{
+          marginBottom: 8, padding: '6px 0', background: token.colorBgElevated,
+          borderRadius: token.borderRadiusLG, boxShadow: token.boxShadowSecondary,
+          maxHeight: 260, overflowY: 'auto', border: `1px solid ${token.colorBorderSecondary}`,
+        }}>
+          {skillsFiltered.slice(0, 8).map(skill => {
+            const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
+            return (
+              <div key={skill.name} onClick={() => selectSkill(skill)}
+                style={{
+                  padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+                  borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                  background: token.colorBgContainer,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = token.colorFillQuaternary; }}
+                onMouseLeave={e => { e.currentTarget.style.background = token.colorBgContainer; }}
+              >
+                <RobotOutlined style={{ color: token.colorPrimary, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>/{sn}</div>
+                  <div style={{ fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill.description}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <Sender
         value={input}
-        onChange={setInput}
+        onChange={handleInputChange}
         onSubmit={(val) => { if (val.trim()) sendMessage(val); }}
         onCancel={() => {}}
         loading={loading}
         className={styles.sender}
-        placeholder="Ask me anything..."
+        placeholder="Ask me anything... Type / to select a skill"
+        header={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {uploadedFiles.length > 0 && (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {uploadedFiles.map(f => (
+                  <Tag key={f} closable onClose={() => setUploadedFiles(prev => prev.filter(x => x !== f))}
+                    icon={<PaperClipOutlined />} style={{ margin: 0, fontSize: 12 }}>
+                    {f.split('/').pop()}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </div>
+        }
         prefix={
-          <PaperClipOutlined
-            style={{ fontSize: 18, cursor: 'pointer', color: token.colorTextQuaternary }}
-            onClick={() => document.getElementById('file-upload-input')?.click()}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PaperClipOutlined
+              style={{ fontSize: 18, cursor: 'pointer', color: token.colorTextQuaternary }}
+              title="Upload file"
+              onClick={() => document.getElementById('file-upload-input')?.click()}
+            />
+            <Popover
+              content={
+                <div style={{ maxHeight: 320, overflowY: 'auto', width: 280 }}>
+                  {skills.length === 0 ? (
+                    <div style={{ padding: 12, textAlign: 'center' }}><Text type="secondary" style={{ fontSize: 13 }}>No skills available</Text></div>
+                  ) : skills.map(skill => {
+                    const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
+                    return (
+                      <div key={skill.name} onClick={() => {
+                        setInput(prev => prev + (prev.trim() && !prev.endsWith(' ') ? ' ' : '') + `/${sn} `);
+                      }}
+                        style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: token.borderRadius, marginBottom: 4 }}
+                        onMouseEnter={e => { e.currentTarget.style.background = token.colorFillTertiary; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <div style={{ fontWeight: 500, color: token.colorPrimary, marginBottom: 4, fontSize: 13 }}>
+                          <RobotOutlined /> {skill.name}
+                        </div>
+                        <div style={{ fontSize: 12, color: token.colorTextSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {skill.description}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              }
+              trigger="click"
+              placement="topLeft"
+            >
+              <AppstoreOutlined
+                style={{ fontSize: 18, cursor: 'pointer', color: token.colorTextQuaternary }}
+                title="Select skill"
+              />
+            </Popover>
+          </div>
         }
       />
       <input type="file" id="file-upload-input" style={{ display: 'none' }} onChange={handleFileUpload} />
-    </Flex>
+    </div>
   );
 
   // --- Shared view CTA ---

@@ -128,6 +128,8 @@ server {
     listen 80;
     server_name claw.ai.accuredit.com;
 
+    client_max_body_size 100M;
+
     # API -> Rust 后端
     location /v1/ {
         proxy_pass http://claw_backend;
