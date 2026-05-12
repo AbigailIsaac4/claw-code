@@ -3,7 +3,7 @@
 #
 # 路径说明：
 #   后端代码目录: /storage/users/agent/claw-code
-#   前端构建输出: /home/art/workspace/ui/
+#   前端构建输出: /storage/users/agent/claw-code/frontend
 #   Nginx配置:   /etc/nginx/conf.d/claw.conf
 #   域名:        claw.ai.accuredit.com
 
@@ -11,7 +11,7 @@ set -euo pipefail
 
 # ──────────────── 配置区 ────────────────
 DEPLOY_DIR="/storage/users/agent/claw-code"
-FRONTEND_OUTPUT="/home/art/workspace/ui"
+FRONTEND_OUTPUT="/storage/users/agent/claw-code/frontend"
 BACKEND_PORT=18008
 FRONTEND_PORT=3000
 DOMAIN="claw.ai.accuredit.com"
@@ -25,7 +25,7 @@ echo "============================================"
 echo ""
 
 # ──────────────── Step 0: 准备目录 ────────────────
-echo "[0/6] 准备目录结构..."
+echo "[0/8] 准备目录结构..."
 mkdir -p "${DEPLOY_DIR}/rust/data/workspaces"
 mkdir -p "${DEPLOY_DIR}/logs"
 mkdir -p "${FRONTEND_OUTPUT}"
@@ -38,13 +38,13 @@ if [ -f "$DB_FILE" ]; then
 fi
 
 # ──────────────── Step 1: 编译 Rust 后端 ────────────────
-echo "[1/6] 编译 Rust 后端..."
+echo "[1/8] 编译 Rust 后端..."
 cd "${DEPLOY_DIR}/rust"
 cargo build --release -p api-server 2>&1
 echo "  -> 后端二进制: ${DEPLOY_DIR}/rust/target/release/api-server"
 
 # ──────────────── Step 2: 构建 Next.js 前端 ────────────────
-echo "[2/6] 构建 Next.js 前端..."
+echo "[2/8] 构建 Next.js 前端..."
 cd "${DEPLOY_DIR}/frontend"
 npm ci --production=false 2>&1
 npm run build 2>&1
@@ -60,7 +60,7 @@ cp next.config.*    "${FRONTEND_OUTPUT}/" 2>/dev/null || true
 echo "  -> 前端构建完成"
 
 # ──────────────── Step 3: 后端环境变量 ────────────────
-echo "[3/6] 检查后端 .env..."
+echo "[3/8] 检查后端 .env..."
 ENV_FILE="${DEPLOY_DIR}/rust/.env"
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
@@ -78,7 +78,7 @@ else
 fi
 
 # ──────────────── Step 4: Systemd 服务 ────────────────
-echo "[4/6] 写入 systemd 服务配置..."
+echo "[4/8] 写入 systemd 服务配置..."
 
 # 后端服务
 sudo tee /etc/systemd/system/claw-backend.service > /dev/null << SERVICEEOF
@@ -123,7 +123,7 @@ echo "  -> /etc/systemd/system/claw-backend.service"
 echo "  -> /etc/systemd/system/claw-frontend.service"
 
 # ──────────────── Step 5: Nginx 配置 ────────────────
-echo "[5/6] 写入 Nginx 配置..."
+echo "[5/8] 写入 Nginx 配置..."
 
 sudo tee /etc/nginx/conf.d/claw.conf > /dev/null << 'NGINXEOF'
 # Claw Agent - claw.ai.accuredit.com
@@ -184,7 +184,7 @@ server {
 
     # 前端静态资源（直接从构建目录读取）
     location /_next/static/ {
-        alias /home/art/workspace/ui/static/;
+        alias /storage/users/agent/claw-code/frontend/static/;
         expires 365d;
         access_log off;
         add_header Cache-Control "public, immutable";
@@ -206,8 +206,22 @@ NGINXEOF
 
 echo "  -> /etc/nginx/conf.d/claw.conf"
 
-# ──────────────── Step 6: 完成 ────────────────
-echo "[6/6] 部署脚本执行完成"
+# ──────────────── Step 6: 设置权限 ────────────────
+echo "[6/8] 设置目录权限..."
+# 获取 nginx 用户（通常是 www-data 或 nginx）
+NGINX_USER=$(grep -E "^user" /etc/nginx/nginx.conf 2>/dev/null | awk '{print $2}' | tr -d ';' || echo "www-data")
+echo "  -> Nginx 用户: ${NGINX_USER}"
+
+# 设置前端目录权限
+sudo chown -R $(whoami):${NGINX_USER} "${FRONTEND_OUTPUT}"
+sudo chmod -R 755 "${FRONTEND_OUTPUT}"
+
+# 确保 nginx 用户对父目录有执行权限
+sudo chmod 755 /storage /storage/users /storage/users/agent /storage/users/agent/claw-code 2>/dev/null || true
+echo "  -> 前端目录权限已设置"
+
+# ──────────────── Step 7: 完成 ────────────────
+echo "[7/8] 部署脚本执行完成"
 echo ""
 echo "============================================"
 echo "  后续操作:"
