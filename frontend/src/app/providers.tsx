@@ -2,7 +2,8 @@
 
 import { useSyncExternalStore, type ReactNode } from 'react';
 import { StyleProvider } from '@ant-design/cssinjs';
-import { ConfigProvider, App } from 'antd';
+import { ConfigProvider, App, theme } from 'antd';
+import { XProvider } from '@ant-design/x';
 
 const emptySubscribe = () => () => {};
 const clientSnapshot = () => true;
@@ -17,15 +18,19 @@ export function Providers({ children }: { children: ReactNode }) {
     <StyleProvider hashPriority="high">
       <ConfigProvider
         theme={{
+          algorithm: theme.defaultAlgorithm,
           token: {
-            colorPrimary: '#eb6f4b',
+            colorPrimary: '#1677ff',
             borderRadius: 8,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
           },
         }}
       >
-        <App>
-          {children}
-        </App>
+        <XProvider>
+          <App>
+            {children}
+          </App>
+        </XProvider>
       </ConfigProvider>
     </StyleProvider>
   );

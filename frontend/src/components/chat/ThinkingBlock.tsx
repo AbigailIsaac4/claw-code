@@ -12,12 +12,12 @@ export const ThinkingBlock: React.FC<Props> = ({ content, isStreaming }) => {
 
   return (
     <Think
-      title="思考过程"
+      title="Thinking"
       loading={isStreaming}
       blink={isStreaming}
       style={{ marginBottom: 12 }}
     >
-      <div style={{ maxHeight: 300, overflowY: 'auto', fontSize: 13 }}>
+      <div style={{ maxHeight: 300, overflowY: 'auto', fontSize: 13, lineHeight: 1.7 }}>
         <ReactMarkdown>{content}</ReactMarkdown>
       </div>
     </Think>
