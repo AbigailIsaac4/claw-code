@@ -46,17 +46,23 @@ echo "  -> 后端二进制: ${DEPLOY_DIR}/rust/target/release/api-server"
 # ──────────────── Step 2: 构建 Next.js 前端 ────────────────
 echo "[2/8] 构建 Next.js 前端..."
 cd "${DEPLOY_DIR}/frontend"
-npm ci --production=false 2>&1
+npm ci 2>&1
+rm -rf .next
 npm run build 2>&1
 
-# 复制构建产物到前端输出目录
-echo "  -> 复制构建产物到 ${FRONTEND_OUTPUT}..."
-rm -rf "${FRONTEND_OUTPUT:?}"/*
-cp -r .next/static "${FRONTEND_OUTPUT}/static"
-cp -r .next/server  "${FRONTEND_OUTPUT}/server"
-cp -r public        "${FRONTEND_OUTPUT}/public" 2>/dev/null || true
-cp package.json     "${FRONTEND_OUTPUT}/package.json"
-cp next.config.*    "${FRONTEND_OUTPUT}/" 2>/dev/null || true
+# 复制构建产物到前端输出目录（如果源和目标不同才需要复制）
+CURRENT_DIR="$(pwd)"
+if [ "${CURRENT_DIR}" != "${FRONTEND_OUTPUT}" ]; then
+    echo "  -> 复制构建产物到 ${FRONTEND_OUTPUT}..."
+    rm -rf "${FRONTEND_OUTPUT:?}"/*
+    cp -r .next/static "${FRONTEND_OUTPUT}/static"
+    cp -r .next/server  "${FRONTEND_OUTPUT}/server"
+    cp -r public        "${FRONTEND_OUTPUT}/public" 2>/dev/null || true
+    cp package.json     "${FRONTEND_OUTPUT}/package.json"
+    cp next.config.*    "${FRONTEND_OUTPUT}/" 2>/dev/null || true
+else
+    echo "  -> 前端构建目录与输出目录相同，跳过复制"
+fi
 echo "  -> 前端构建完成"
 
 # ──────────────── Step 3: 后端环境变量 ────────────────
@@ -65,11 +71,9 @@ ENV_FILE="${DEPLOY_DIR}/rust/.env"
 if [ ! -f "$ENV_FILE" ]; then
     cat > "$ENV_FILE" << 'ENVEOF'
 PORT=18008
-
 OPENAI_BASE_URL=http://10.50.70.91:8000/v1
 OPENAI_API_KEY=Empty
 OPENAI_MODEL_NAME=qwen
-
 CLAW_WORKSPACE_ROOT=./data/workspaces
 ENVEOF
     echo "  -> 已创建 ${ENV_FILE}"
