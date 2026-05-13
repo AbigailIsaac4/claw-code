@@ -15,7 +15,7 @@ pub struct CompactionConfig {
 impl Default for CompactionConfig {
     fn default() -> Self {
         Self {
-            preserve_recent_messages: 4,
+            preserve_recent_messages: 10,
             max_estimated_tokens: 10_000,
         }
     }

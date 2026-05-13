@@ -122,7 +122,7 @@ impl ApiClient for WebApiClient {
             max_tokens: std::env::var("MAX_OUTPUT_TOKENS")
                 .ok()
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(16384),
+                .unwrap_or(8192),
             ..Default::default()
         };
 

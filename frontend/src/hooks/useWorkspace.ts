@@ -31,16 +31,31 @@ export function useWorkspace(sessionId: string | null) {
       if (res.ok) {
         const data = await res.json();
         const raw: WorkspaceFile[] = data.files || [];
-        // Filter out internal scaffolding directories and non-result files
-        // Only show files the user cares about (actual deliverables)
-        const HIDDEN_DIRS = new Set(['data', 'output', '.cache', 'node_modules', '__pycache__', '.git', '.venv', 'venv']);
+        // Whitelist: only show result/deliverable files that users care about.
+        // Hide all directories, scripts, configs, logs, and intermediate artifacts.
+        const RESULT_EXTENSIONS = new Set([
+          // Documents
+          'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv', 'tsv',
+          'md', 'txt', 'rtf', 'odt', 'ods', 'odp',
+          // Images
+          'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff',
+          // Data & structured
+          'json', 'xml', 'yaml', 'yml',
+          // Archives
+          'zip', 'tar', 'gz', 'rar', '7z',
+          // Web
+          'html', 'htm', 'css',
+          // Media
+          'mp3', 'mp4', 'wav', 'avi', 'mov',
+        ]);
         const filtered = raw.filter(f => {
-          // Hide hidden files/dirs (dotfiles)
+          // Always hide directories — users only need files
+          if (f.is_dir) return false;
+          // Hide dotfiles
           if (f.name.startsWith('.')) return false;
-          // At root level (no '/' in path), hide known scaffold dirs if they're directories
-          const depth = f.path.split('/').length;
-          if (depth === 1 && f.is_dir && HIDDEN_DIRS.has(f.name)) return false;
-          return true;
+          // Only show files with known result extensions
+          const ext = f.name.split('.').pop()?.toLowerCase() || '';
+          return RESULT_EXTENSIONS.has(ext);
         });
         setWorkspaceFiles(filtered);
       }

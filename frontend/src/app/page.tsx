@@ -551,6 +551,90 @@ export default function ChatPage() {
 
   const chatSender = !isSharedView && (
     <div style={{ marginInline: 24, maxWidth: 840, width: '100%', alignSelf: 'center' }}>
+      {/* Inline question panel — floating above input */}
+      {questionReq && (
+        <div style={{
+          marginBottom: 12, borderRadius: 14, overflow: 'hidden',
+          border: '1px solid #d1fae5', background: '#ffffff',
+          boxShadow: '0 4px 24px rgba(16, 163, 127, 0.10)',
+        }}>
+          {/* Header strip */}
+          <div style={{
+            padding: '10px 16px', background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf8 100%)',
+            display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #d1fae5',
+          }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: '50%', background: '#10a37f',
+              animation: 'pulse 1.5s ease-in-out infinite', flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#065f46' }}>Agent 需要您的输入</span>
+            <style>{`@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }`}</style>
+          </div>
+          {/* Question text */}
+          <div style={{ padding: '12px 16px', fontSize: 14, color: '#1e293b', lineHeight: 1.6 }}>
+            {questionReq.question}
+          </div>
+          {/* Options or text input */}
+          <div style={{ padding: '0 16px 14px' }}>
+            {questionReq.options?.length ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {questionReq.options.map((opt, i) => (
+                  <Button
+                    key={i}
+                    type={questionAnswer === opt ? 'primary' : 'default'}
+                    onClick={() => {
+                      setQuestionAnswer(opt);
+                      // Auto-submit on click for option-based questions
+                      setTimeout(() => {
+                        if (!questionReq) return;
+                        fetch(apiUrl('/v1/chat/resolve_question'), {
+                          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                          body: JSON.stringify({ question_id: questionReq.question_id, answer: opt }),
+                        }).then(() => { setQuestionReq(null); setQuestionAnswer(''); });
+                      }, 0);
+                    }}
+                    style={{
+                      borderRadius: 8, height: 34, fontSize: 13,
+                      ...(questionAnswer === opt ? { background: '#10a37f', borderColor: '#10a37f' } : {}),
+                    }}
+                  >
+                    {opt}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <Input.TextArea
+                  value={questionAnswer}
+                  onChange={e => setQuestionAnswer(e.target.value)}
+                  placeholder="输入您的回答..."
+                  autoSize={{ minRows: 1, maxRows: 3 }}
+                  style={{ borderRadius: 10, fontSize: 13, flex: 1 }}
+                  onPressEnter={e => {
+                    if (!e.shiftKey && questionAnswer.trim()) {
+                      e.preventDefault();
+                      handleResolveQuestion();
+                    }
+                  }}
+                />
+                <Button
+                  type="primary"
+                  disabled={!questionAnswer.trim()}
+                  onClick={handleResolveQuestion}
+                  style={{
+                    borderRadius: 8, height: 34, flexShrink: 0,
+                    background: questionAnswer.trim() ? '#10a37f' : undefined,
+                    borderColor: questionAnswer.trim() ? '#10a37f' : undefined,
+                  }}
+                >
+                  提交
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Skill popup */}
       {skillPopupOpen && skillsFiltered.length > 0 && (
         <div style={{
@@ -670,36 +754,28 @@ export default function ChatPage() {
   const workspaceSider = !isSharedView && (
     <div style={{ width: 280, height: '100%', display: 'flex', flexDirection: 'column', background: '#f8fafc', borderLeft: '1px solid #e2e8f0' }}>
       <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text strong style={{ fontSize: 15, color: '#1e293b' }}>Workspace</Text>
-        <Button type="text" size="small" icon={<RefreshCw size={14} />} onClick={() => loadWorkspaceFiles(workspaceSubPath || undefined)} loading={workspaceFilesLoading} />
-      </div>
-      <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: token.colorFillQuaternary }}>
-        <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Files {workspaceSubPath && `/ ${workspaceSubPath}`}
-        </Text>
+        <Text strong style={{ fontSize: 15, color: '#1e293b' }}>结果文件</Text>
+        <Button type="text" size="small" icon={<RefreshCw size={14} />} onClick={() => loadWorkspaceFiles()} loading={workspaceFilesLoading} />
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-        {workspaceSubPath && (
-          <div style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: token.colorPrimary }}
-            onClick={() => { setWorkspaceSubPath(''); void loadWorkspaceFiles(); }}>
-            <Folder size={14} /> ..
-          </div>
-        )}
         {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <Folder size={32} style={{ color: token.colorBorder, marginBottom: 8 }} />
+            <FileText size={32} style={{ color: token.colorBorder, marginBottom: 8 }} />
             <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-              {!activeSessionId ? 'Select a session' : workspaceSubPath === 'output' ? 'No result files' : 'No files here'}
+              {!activeSessionId ? '请选择一个会话' : '暂无结果文件'}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+              Agent 生成的文档、图片等将展示在此处
             </Text>
           </div>
         ) : workspaceFiles.map((file, idx) => (
-          <Tooltip key={idx} title={file.is_dir ? 'Open folder' : 'Download'} placement="left">
+          <Tooltip key={idx} title="点击下载" placement="left">
             <div className="workspace-file-item"
-              style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, borderRadius: 4, margin: '1px 4px' }}
-              onClick={() => file.is_dir ? (setWorkspaceSubPath(file.path), void loadWorkspaceFiles(file.path)) : downloadWorkspaceFileFromSidebar(file.path)}>
-              {file.is_dir ? <Folder size={14} style={{ color: token.colorWarning }} /> : <FileText size={14} style={{ color: token.colorTextQuaternary }} />}
+              style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, borderRadius: 4, margin: '1px 4px' }}
+              onClick={() => downloadWorkspaceFileFromSidebar(file.path)}>
+              <FileText size={14} style={{ color: '#10a37f', flexShrink: 0 }} />
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-              {!file.is_dir && <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size/1024).toFixed(1)}K` : `${(file.size/1048576).toFixed(1)}M`}</Text>}
+              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size/1024).toFixed(1)}K` : `${(file.size/1048576).toFixed(1)}M`}</Text>
             </div>
           </Tooltip>
         ))}
@@ -759,117 +835,6 @@ export default function ChatPage() {
         </Space>
       </Modal>
 
-      {/* Question Modal — Enterprise interactive dialog */}
-      <Modal
-        open={!!questionReq}
-        closable={false}
-        keyboard={false}
-        mask={{ closable: false }}
-        footer={null}
-        width={520}
-        styles={{ body: { padding: '28px 32px' } }}
-      >
-        {/* Header with icon */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: 'linear-gradient(135deg, #10a37f 0%, #0d8c6d 100%)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <Bot size={22} color="#fff" />
-          </div>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>Agent 需要您的输入</div>
-            <div style={{ fontSize: 13, color: '#8c8c8c', marginTop: 2 }}>请回答以下问题以继续执行任务</div>
-          </div>
-        </div>
-
-        {/* Question text */}
-        <div style={{
-          background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 10,
-          padding: '16px 20px', marginBottom: 20, lineHeight: 1.7,
-          fontSize: 15, color: '#334155',
-        }}>
-          {questionReq?.question}
-        </div>
-
-        {/* Options or free-text input */}
-        {questionReq?.options?.length ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-            {questionReq.options.map((opt, i) => (
-              <div
-                key={i}
-                onClick={() => setQuestionAnswer(opt)}
-                style={{
-                  padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
-                  border: questionAnswer === opt ? '2px solid #10a37f' : '1.5px solid #e2e8f0',
-                  background: questionAnswer === opt ? '#f0fdf8' : '#fff',
-                  transition: 'all 0.2s ease',
-                  display: 'flex', alignItems: 'center', gap: 12,
-                }}
-                onMouseEnter={e => {
-                  if (questionAnswer !== opt) {
-                    (e.currentTarget as HTMLElement).style.borderColor = '#94a3b8';
-                    (e.currentTarget as HTMLElement).style.background = '#f8fafc';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (questionAnswer !== opt) {
-                    (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0';
-                    (e.currentTarget as HTMLElement).style.background = '#fff';
-                  }
-                }}
-              >
-                <div style={{
-                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                  border: questionAnswer === opt ? '6px solid #10a37f' : '2px solid #cbd5e1',
-                  transition: 'all 0.2s ease',
-                }} />
-                <span style={{ fontSize: 14, color: '#334155', lineHeight: 1.5 }}>{opt}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Input.TextArea
-            value={questionAnswer}
-            onChange={e => setQuestionAnswer(e.target.value)}
-            placeholder="输入您的回答..."
-            rows={3}
-            style={{
-              marginBottom: 20, borderRadius: 10, fontSize: 14,
-              border: '1.5px solid #e2e8f0', padding: '12px 16px',
-            }}
-            onPressEnter={e => {
-              if (!e.shiftKey && questionAnswer.trim()) {
-                e.preventDefault();
-                handleResolveQuestion();
-              }
-            }}
-          />
-        )}
-
-        {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <Button
-            onClick={() => { setQuestionAnswer('skip'); setTimeout(handleResolveQuestion, 0); }}
-            style={{ borderRadius: 8, height: 38, padding: '0 20px' }}
-          >
-            跳过
-          </Button>
-          <Button
-            type="primary"
-            disabled={!questionAnswer.trim()}
-            onClick={handleResolveQuestion}
-            style={{
-              borderRadius: 8, height: 38, padding: '0 24px',
-              background: questionAnswer.trim() ? '#10a37f' : undefined,
-              borderColor: questionAnswer.trim() ? '#10a37f' : undefined,
-            }}
-          >
-            提交回答
-          </Button>
-        </div>
-      </Modal>
     </ChatCtx.Provider>
   );
 }
