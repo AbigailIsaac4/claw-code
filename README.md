@@ -242,6 +242,18 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18008 npx next start --hostname 127.0.
 bash scripts/init_users.sh http://127.0.0.1:18008
 ```
 
+### Adding or Updating Skills
+
+To add new skills or update existing ones in the web environment:
+1. Place the new skill scripts or files inside the `assets/skills/` directory at the repository root.
+2. Commit and push your changes to your deployment branch.
+3. **Important:** The Rust backend (`api-server`) caches the skills list in memory during startup to optimize LLM prompt generation. You must **restart the backend service** to apply any additions, removals, or changes to skills.
+
+If you are using a systemd deployment, you can reload the skills by running:
+```bash
+sudo systemctl restart claw-backend
+```
+
 ### Production deployment
 
 For a manual Linux deployment using `systemd` and Nginx, see [`docs/deployment.md`](./docs/deployment.md). It documents the current backend/frontend service setup, SSE proxying, and same-origin `/v1/` routing without wrapper scripts.
