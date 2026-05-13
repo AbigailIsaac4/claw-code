@@ -46,7 +46,7 @@ cd "${DEPLOY_DIR}"
 git checkout -- frontend/ 2>/dev/null || true
 
 cd "${DEPLOY_DIR}/frontend"
-[ -d "node_modules" ] || npm install 2>&1
+npm install 2>&1
 rm -rf .next
 npm run build 2>&1
 echo "  -> 前端构建完成"
