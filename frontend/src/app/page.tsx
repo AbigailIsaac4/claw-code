@@ -534,7 +534,7 @@ export default function ChatPage() {
           borderRadius: token.borderRadiusLG, boxShadow: token.boxShadowSecondary,
           maxHeight: 260, overflowY: 'auto', border: `1px solid ${token.colorBorderSecondary}`,
         }}>
-          {skillsFiltered.slice(0, 8).map(skill => {
+          {skillsFiltered.map(skill => {
             const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
             return (
               <div key={skill.name} onClick={() => selectSkill(skill)}
