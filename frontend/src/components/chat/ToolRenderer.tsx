@@ -1,6 +1,5 @@
 import React from 'react';
-import { ThoughtChain } from '@ant-design/x';
-import { Typography, theme } from 'antd';
+import { Typography, theme, Collapse } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { Terminal, FileText, Edit3, Search, Folder, Zap, ListTodo, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -128,29 +127,66 @@ const ToolDetailContent: React.FC<{ tool: ToolCall }> = ({ tool }) => {
   );
 };
 
-const mapStatus = (s: string): 'loading' | 'success' | 'error' | 'abort' | undefined =>
-  s === 'running' ? 'loading' : s === 'error' ? 'error' : s === 'done' ? 'success' : undefined;
-
 export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
+  const { token } = useToken();
   if (!toolCalls?.length) return null;
 
   return (
-    <div style={{ marginTop: 8 }}>
-      <ThoughtChain
-        items={toolCalls.map((tool, idx) => ({
-          key: String(idx),
-          title: (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {toolIcon(tool.name)}
-              <span>{tool.name}</span>
-            </div>
-          ),
-          description: summarizeInput(tool) || undefined,
-          status: mapStatus(tool.status),
-          content: <ToolDetailContent tool={tool} />,
-          collapsible: true,
-        }))}
+    <div style={{ marginTop: 12, marginBottom: 12 }}>
+      <Collapse
+        ghost
+        expandIconPosition="end"
+        items={toolCalls.map((tool, idx) => {
+          const isRunning = tool.status === 'running';
+          const isError = tool.status === 'error';
+          const isDone = tool.status === 'done';
+          
+          let statusIcon;
+          if (isRunning) statusIcon = <LoadingOutlined style={{ color: token.colorPrimary }} />;
+          else if (isError) statusIcon = <CloseCircleOutlined style={{ color: token.colorError }} />;
+          else if (isDone) statusIcon = <CheckCircleOutlined style={{ color: token.colorSuccess }} />;
+          else statusIcon = <MinusCircleOutlined style={{ color: token.colorTextQuaternary }} />;
+
+          return {
+            key: String(idx),
+            label: (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%' }}>
+                <span style={{ 
+                  background: token.colorFillAlter, 
+                  padding: '2px 8px', 
+                  borderRadius: 12, 
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: token.colorTextSecondary
+                }}>
+                  Step {idx + 1}
+                </span>
+                {toolIcon(tool.name)}
+                <span style={{ fontWeight: 600, color: token.colorTextHeading, fontSize: 14 }}>{tool.name}</span>
+                <span style={{ color: token.colorTextTertiary, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
+                  {summarizeInput(tool)}
+                </span>
+                <div style={{ flex: 1 }} />
+                {statusIcon}
+              </div>
+            ),
+            children: (
+              <div style={{ paddingLeft: 16, borderLeft: `2px solid ${token.colorBorderSecondary}`, marginLeft: 8 }}>
+                <ToolDetailContent tool={tool} />
+              </div>
+            ),
+          };
+        })}
       />
+      <style>{`
+        .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-header {
+          padding: 8px 0;
+          align-items: center;
+        }
+        .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+          padding: 0 0 16px 0;
+        }
+      `}</style>
     </div>
   );
 };
