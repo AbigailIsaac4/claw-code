@@ -149,8 +149,8 @@ const MessageFooter: React.FC<{ content: string; status?: string; id?: string | 
 
 // ==================== Status Header ====================
 const STATUS_CONFIG: Record<string, { title: string; status: string }> = {
-  loading: { title: 'Running...', status: 'loading' },
-  updating: { title: 'Running...', status: 'loading' },
+  loading: { title: 'Thinking...', status: 'loading' },
+  updating: { title: 'Generating...', status: 'loading' },
   success: { title: 'Done', status: 'success' },
   error: { title: 'Failed', status: 'error' },
   abort: { title: 'Aborted', status: 'abort' },
@@ -201,6 +201,9 @@ export default function ChatPage() {
 
   const {
     sendMessage: sendMessageRaw,
+    activeToolName,
+    activeToolSummary,
+    currentIteration,
   } = useChatStream({
     token: authToken, sessions, activeSessionId, activeSession,
     setSessions, setActiveSessionId,
@@ -364,13 +367,18 @@ export default function ChatPage() {
       header: (_content: string, info) => {
         const cfg = STATUS_CONFIG[info.status as string];
         if (!cfg) return null;
+        const isActive = info.status === 'loading' || info.status === 'updating';
+        const iterPrefix = isActive && currentIteration > 1 ? `Step ${currentIteration} · ` : '';
+        const toolLabel = isActive && activeToolName
+          ? `${iterPrefix}${activeToolName}${activeToolSummary ? ': ' + activeToolSummary : ''}`
+          : `${iterPrefix}${cfg.title}`;
         return (
           <ThoughtChain.Item
             style={{ marginBottom: 8 }}
             status={cfg.status as any}
             variant="solid"
             icon={<GlobalOutlined />}
-            title={cfg.title}
+            title={toolLabel}
           />
         );
       },
@@ -450,13 +458,22 @@ export default function ChatPage() {
       {activeSession?.messages.length ? (
         <Bubble.List
           autoScroll
-          items={activeSession.messages.map(msg => ({
-            key: msg.id,
-            role: msg.role === 'user' ? 'user' : 'ai',
-            content: msg.content || ' ',
-            loading: loading && activeSession.messages[activeSession.messages.length - 1]?.id === msg.id,
-            extraInfo: { toolCalls: msg.toolCalls },
-          }))}
+          items={activeSession.messages.map(msg => {
+            const isLastMsg = activeSession.messages[activeSession.messages.length - 1]?.id === msg.id;
+            const isStreaming = loading && isLastMsg && msg.role === 'assistant';
+            // Use 'loading' only for empty content (skeleton), 'updating' for content being streamed
+            const status = isStreaming
+              ? (msg.content && msg.content.trim() ? 'updating' : 'loading')
+              : undefined;
+            return {
+              key: msg.id,
+              role: msg.role === 'user' ? 'user' : 'ai',
+              content: msg.content || ' ',
+              loading: false,
+              status,
+              extraInfo: { toolCalls: msg.toolCalls },
+            };
+          })}
           styles={{ root: { maxWidth: 860, width: '100%', padding: '0 24px' } }}
           role={bubbleRole}
         />

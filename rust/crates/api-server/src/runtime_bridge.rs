@@ -32,11 +32,29 @@ pub struct WebApiClient {
     pub active_turns: ActiveTurns,
     pub user_id: String,
     pub session_id: String,
+    pub iteration_count: usize,
 }
 
 impl ApiClient for WebApiClient {
     fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
         let mut events = Vec::new();
+
+        // Emit iteration boundary event so the frontend can track agent progress
+        self.iteration_count += 1;
+        let iteration = self.iteration_count;
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let sse_data = serde_json::to_string(&serde_json::json!({
+                    "iteration": iteration,
+                    "phase": "llm_call"
+                }))
+                .unwrap_or_default();
+                let _ = self
+                    .tx
+                    .send(Event::default().event("iteration_start").data(sse_data))
+                    .await;
+            });
+        });
 
         let mapped_messages = request
             .messages
@@ -212,6 +230,11 @@ impl WebApiClient {
     async fn push_text_delta(&self, events: &mut Vec<AssistantEvent>, text: String) {
         append_active_assistant_text(&self.active_turns, &self.user_id, &self.session_id, &text)
             .await;
+
+        // Detect <thinking> tags and emit as separate event type
+        let is_thinking = text.contains("<thinking>") || text.contains("</thinking>");
+        let sse_event_type = if is_thinking { "thinking_delta" } else { "message" };
+
         let sse_data = serde_json::to_string(&serde_json::json!({
             "choices": [{
                 "delta": {
@@ -222,7 +245,7 @@ impl WebApiClient {
         .unwrap_or_default();
         let _ = self
             .tx
-            .send(Event::default().event("message").data(sse_data))
+            .send(Event::default().event(sse_event_type).data(sse_data))
             .await;
         events.push(AssistantEvent::TextDelta(text));
     }
@@ -473,7 +496,47 @@ impl WebToolExecutor {
 impl ToolExecutor for WebToolExecutor {
     fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
         self.send_tool_start(tool_name, input);
+
+        // Spawn a heartbeat task that sends periodic SSE events during tool execution
+        let heartbeat_tx = self.tx.clone();
+        let heartbeat_tool = tool_name.to_string();
+        let heartbeat_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let heartbeat_cancel_clone = heartbeat_cancel.clone();
+
+        let heartbeat_handle = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                if heartbeat_cancel_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let elapsed_ms = start.elapsed().as_millis() as u64;
+                let sse_data = serde_json::to_string(&serde_json::json!({
+                    "tool": heartbeat_tool,
+                    "elapsed_ms": elapsed_ms,
+                    "phase": "executing_tool"
+                }))
+                .unwrap_or_default();
+                // Use try_send-like behavior: if send fails, stop heartbeat
+                let send_result = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        heartbeat_tx
+                            .send(Event::default().event("heartbeat").data(sse_data))
+                            .await
+                    })
+                });
+                if send_result.is_err() {
+                    break;
+                }
+            }
+        });
+
         let result = self.execute_registry_tool(tool_name, input);
+
+        // Stop heartbeat
+        heartbeat_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = heartbeat_handle.join();
+
         self.send_tool_result(tool_name, &result);
         result.map_err(ToolError::new)
     }

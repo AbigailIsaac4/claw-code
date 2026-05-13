@@ -234,6 +234,7 @@ pub async fn chat_completions(
             active_turns: active_turns.clone(),
             user_id: user_id.clone(),
             session_id: session_id.clone(),
+            iteration_count: 0,
         };
         // 从数据库加载历史 Session，或者新建
         let mut session = Session::new();

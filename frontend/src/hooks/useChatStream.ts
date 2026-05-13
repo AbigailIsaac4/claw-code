@@ -70,6 +70,7 @@ export function useChatStream({
 }: UseChatStreamProps) {
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [activeToolSummary, setActiveToolSummary] = useState<string | null>(null);
+  const [currentIteration, setCurrentIteration] = useState<number>(0);
 
   const setConversationLoading = useCallback((value: boolean) => {
     loadingRef.current = value;
@@ -158,7 +159,7 @@ export function useChatStream({
             onError?.(ev.data || 'The agent run failed.');
             return;
           }
-          if (ev.event === 'message') {
+          if (ev.event === 'message' || ev.event === 'thinking_delta') {
             try {
               const data = JSON.parse(ev.data);
               const chunkText = data.choices?.[0]?.delta?.content || '';
@@ -176,6 +177,14 @@ export function useChatStream({
             } catch(e) {
               console.warn('Failed to parse message chunk:', e);
             }
+          } else if (ev.event === 'iteration_start') {
+            try {
+              const data = JSON.parse(ev.data);
+              setCurrentIteration(data.iteration || 0);
+              // Clear tool indicators at iteration boundary
+              setActiveToolName(null);
+              setActiveToolSummary(null);
+            } catch {}
           } else if (ev.event === 'tool_call_start') {
             try {
               const data = JSON.parse(ev.data);
@@ -260,6 +269,18 @@ export function useChatStream({
             } catch(e) {
               console.warn('Failed to parse question_required:', e);
             }
+          } else if (ev.event === 'heartbeat') {
+            try {
+              const data = JSON.parse(ev.data);
+              // Update tool summary with elapsed time to show progress
+              if (data.tool && data.elapsed_ms) {
+                const elapsed = Math.round(data.elapsed_ms / 1000);
+                setActiveToolSummary(prev => {
+                  const base = prev?.replace(/\s*\(\d+s\)$/, '') || '';
+                  return `${base} (${elapsed}s)`;
+                });
+              }
+            } catch {}
           }
         },
         onclose() {
@@ -297,6 +318,7 @@ export function useChatStream({
   return {
     activeToolName,
     activeToolSummary,
+    currentIteration,
     sendMessage,
   };
 }
