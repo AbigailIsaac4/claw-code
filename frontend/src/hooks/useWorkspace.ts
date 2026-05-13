@@ -30,7 +30,19 @@ export function useWorkspace(sessionId: string | null) {
       });
       if (res.ok) {
         const data = await res.json();
-        setWorkspaceFiles(data.files || []);
+        const raw: WorkspaceFile[] = data.files || [];
+        // Filter out internal scaffolding directories and non-result files
+        // Only show files the user cares about (actual deliverables)
+        const HIDDEN_DIRS = new Set(['data', 'output', '.cache', 'node_modules', '__pycache__', '.git', '.venv', 'venv']);
+        const filtered = raw.filter(f => {
+          // Hide hidden files/dirs (dotfiles)
+          if (f.name.startsWith('.')) return false;
+          // At root level (no '/' in path), hide known scaffold dirs if they're directories
+          const depth = f.path.split('/').length;
+          if (depth === 1 && f.is_dir && HIDDEN_DIRS.has(f.name)) return false;
+          return true;
+        });
+        setWorkspaceFiles(filtered);
       }
     } catch (err) {
       console.error('Failed to load workspace files:', err);

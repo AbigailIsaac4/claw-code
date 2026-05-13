@@ -462,6 +462,7 @@ export default function ChatPage() {
   const chatList = (
     <div className={styles.chatList} ref={listRef}>
       {activeSession?.messages.length ? (
+        <>
         <Bubble.List
           autoScroll
           items={activeSession.messages.map(msg => {
@@ -480,6 +481,29 @@ export default function ChatPage() {
           styles={{ root: { maxWidth: 860, width: '100%', padding: '0 24px' } }}
           role={bubbleRole}
         />
+        {/* Inline question indicator in chat stream */}
+        {questionReq && (
+          <div style={{
+            maxWidth: 860, width: '100%', padding: '12px 24px', margin: '0 auto',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 18px', borderRadius: 12,
+              background: 'linear-gradient(135deg, #f0fdf8 0%, #ecfdf5 100%)',
+              border: '1px solid #a7f3d0',
+            }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: '50%', background: '#10a37f', flexShrink: 0,
+                animation: 'pulse 1.5s ease-in-out infinite',
+              }} />
+              <span style={{ fontSize: 13, color: '#065f46', fontWeight: 500 }}>
+                Agent 正在等待您的回答，请在弹窗中回复…
+              </span>
+              <style>{`@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }`}</style>
+            </div>
+          </div>
+        )}
+        </>
       ) : (
         <Flex vertical style={{ maxWidth: 840, flex: 1, justifyContent: 'center' }} gap={16} align="center" className={styles.placeholder}>
           <Welcome
@@ -735,19 +759,116 @@ export default function ChatPage() {
         </Space>
       </Modal>
 
-      {/* Question Modal */}
-      <Modal title={<span style={{ fontSize: 18 }}>Agent Question</span>} open={!!questionReq} closable={false} keyboard={false} mask={{ closable: false }} footer={null} width={480}>
-        <p style={{ marginTop: 16 }}>{questionReq?.question}</p>
+      {/* Question Modal — Enterprise interactive dialog */}
+      <Modal
+        open={!!questionReq}
+        closable={false}
+        keyboard={false}
+        mask={{ closable: false }}
+        footer={null}
+        width={520}
+        styles={{ body: { padding: '28px 32px' } }}
+      >
+        {/* Header with icon */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: 'linear-gradient(135deg, #10a37f 0%, #0d8c6d 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <Bot size={22} color="#fff" />
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>Agent 需要您的输入</div>
+            <div style={{ fontSize: 13, color: '#8c8c8c', marginTop: 2 }}>请回答以下问题以继续执行任务</div>
+          </div>
+        </div>
+
+        {/* Question text */}
+        <div style={{
+          background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 10,
+          padding: '16px 20px', marginBottom: 20, lineHeight: 1.7,
+          fontSize: 15, color: '#334155',
+        }}>
+          {questionReq?.question}
+        </div>
+
+        {/* Options or free-text input */}
         {questionReq?.options?.length ? (
-          <Radio.Group value={questionAnswer} onChange={e => setQuestionAnswer(e.target.value)} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
-            {questionReq.options.map((opt, i) => <Radio key={i} value={opt}>{opt}</Radio>)}
-          </Radio.Group>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+            {questionReq.options.map((opt, i) => (
+              <div
+                key={i}
+                onClick={() => setQuestionAnswer(opt)}
+                style={{
+                  padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
+                  border: questionAnswer === opt ? '2px solid #10a37f' : '1.5px solid #e2e8f0',
+                  background: questionAnswer === opt ? '#f0fdf8' : '#fff',
+                  transition: 'all 0.2s ease',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                }}
+                onMouseEnter={e => {
+                  if (questionAnswer !== opt) {
+                    (e.currentTarget as HTMLElement).style.borderColor = '#94a3b8';
+                    (e.currentTarget as HTMLElement).style.background = '#f8fafc';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (questionAnswer !== opt) {
+                    (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0';
+                    (e.currentTarget as HTMLElement).style.background = '#fff';
+                  }
+                }}
+              >
+                <div style={{
+                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                  border: questionAnswer === opt ? '6px solid #10a37f' : '2px solid #cbd5e1',
+                  transition: 'all 0.2s ease',
+                }} />
+                <span style={{ fontSize: 14, color: '#334155', lineHeight: 1.5 }}>{opt}</span>
+              </div>
+            ))}
+          </div>
         ) : (
-          <Input.TextArea value={questionAnswer} onChange={e => setQuestionAnswer(e.target.value)} placeholder="Type your answer..." rows={3} style={{ marginTop: 16 }} />
+          <Input.TextArea
+            value={questionAnswer}
+            onChange={e => setQuestionAnswer(e.target.value)}
+            placeholder="输入您的回答..."
+            rows={3}
+            style={{
+              marginBottom: 20, borderRadius: 10, fontSize: 14,
+              border: '1.5px solid #e2e8f0', padding: '12px 16px',
+            }}
+            onPressEnter={e => {
+              if (!e.shiftKey && questionAnswer.trim()) {
+                e.preventDefault();
+                handleResolveQuestion();
+              }
+            }}
+          />
         )}
-        <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <Button type="primary" disabled={!questionAnswer.trim()} onClick={handleResolveQuestion}>Submit</Button>
-        </Space>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <Button
+            onClick={() => { setQuestionAnswer('skip'); setTimeout(handleResolveQuestion, 0); }}
+            style={{ borderRadius: 8, height: 38, padding: '0 20px' }}
+          >
+            跳过
+          </Button>
+          <Button
+            type="primary"
+            disabled={!questionAnswer.trim()}
+            onClick={handleResolveQuestion}
+            style={{
+              borderRadius: 8, height: 38, padding: '0 24px',
+              background: questionAnswer.trim() ? '#10a37f' : undefined,
+              borderColor: questionAnswer.trim() ? '#10a37f' : undefined,
+            }}
+          >
+            提交回答
+          </Button>
+        </div>
       </Modal>
     </ChatCtx.Provider>
   );

@@ -288,6 +288,17 @@ pub async fn chat_completions(
         let mut system_prompts = vec![
             "The current working directory is this session's isolated local workspace. Use relative file paths for uploaded and generated files; do not assume a /workspace absolute directory exists."
                 .to_string(),
+            // Interactive agent behavior: use AskUserQuestion to involve the user
+            "You are an interactive AI agent on a collaborative platform. The user is a non-technical professional who cares about results, not implementation details.\n\n\
+            IMPORTANT INTERACTION RULES:\n\
+            1. When you need the user to make a choice between multiple approaches, use the `AskUserQuestion` tool with clear options.\n\
+            2. When you need additional information or clarification from the user to proceed, use `AskUserQuestion` to ask.\n\
+            3. When a task has ambiguous requirements, do NOT guess — ask the user via `AskUserQuestion`.\n\
+            4. When you encounter an error that requires user decision (e.g. retry, skip, or change approach), use `AskUserQuestion`.\n\
+            5. When presenting deliverables or intermediate results that need user approval before proceeding to the next phase, use `AskUserQuestion`.\n\
+            6. For straightforward execution steps (installing packages, running commands, reading/writing files), proceed automatically without asking.\n\
+            7. Always show your thinking process and execution chain clearly in your text responses so the user can follow along."
+                .to_string(),
         ];
         // Inject available skills listing so the LLM knows what skills it can load
         if let Some(skills_prompt) = crate::skills::build_skills_system_prompt() {
