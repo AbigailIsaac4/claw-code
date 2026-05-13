@@ -2,6 +2,7 @@ import React from 'react';
 import { ThoughtChain } from '@ant-design/x';
 import { Typography, theme } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { Terminal, FileText, Edit3, Search, Folder, Zap, ListTodo, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 const { Text } = Typography;
@@ -21,14 +22,15 @@ interface Props {
 
 const toolIcon = (name: string) => {
   const n = name.toLowerCase();
-  if (n === 'bash') return '>_';
-  if (n === 'read') return '📄';
-  if (n === 'write' || n === 'edit') return '✏️';
-  if (n === 'grep') return '🔍';
-  if (n === 'glob') return '📂';
-  if (n === 'skill') return '⚡';
-  if (n === 'todowrite') return '📋';
-  return '🔧';
+  const props = { size: 14, style: { color: '#64748b' } };
+  if (n === 'bash') return <Terminal {...props} />;
+  if (n === 'read') return <FileText {...props} />;
+  if (n === 'write' || n === 'edit') return <Edit3 {...props} />;
+  if (n === 'grep') return <Search {...props} />;
+  if (n === 'glob') return <Folder {...props} />;
+  if (n === 'skill') return <Zap {...props} />;
+  if (n === 'todowrite') return <ListTodo {...props} />;
+  return <Wrench {...props} />;
 };
 
 const summarizeInput = (tool: ToolCall): string => {
@@ -137,7 +139,12 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
       <ThoughtChain
         items={toolCalls.map((tool, idx) => ({
           key: String(idx),
-          title: `${toolIcon(tool.name)} ${tool.name}`,
+          title: (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {toolIcon(tool.name)}
+              <span>{tool.name}</span>
+            </div>
+          ),
           description: summarizeInput(tool) || undefined,
           status: mapStatus(tool.status),
           content: <ToolDetailContent tool={tool} />,

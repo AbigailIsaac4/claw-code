@@ -185,48 +185,48 @@ pub async fn list_workspace_files(
     };
 
     let mut entries = Vec::new();
-    let mut dir = tokio::fs::read_dir(&target_dir).await.map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read directory: {error}"),
-        )
-    })?;
+    let mut dirs_to_visit = vec![target_dir.clone()];
 
-    while let Some(entry) = dir.next_entry().await.map_err(|error| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to read entry: {error}"),
-        )
-    })? {
-        let file_type = entry.file_type().await.map_err(|error| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to read file type: {error}"),
-            )
-        })?;
-        let metadata = entry.metadata().await.ok();
-        let name = entry.file_name().to_string_lossy().into_owned();
+    while let Some(current_dir) = dirs_to_visit.pop() {
+        let mut dir = match tokio::fs::read_dir(&current_dir).await {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
 
-        // Skip hidden files and sandbox internals
-        if name.starts_with('.') {
-            continue;
+        while let Ok(Some(entry)) = dir.next_entry().await {
+            let file_type = match entry.file_type().await {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            let metadata = entry.metadata().await.ok();
+            let name = entry.file_name().to_string_lossy().into_owned();
+
+            // Skip hidden files and sandbox internals
+            if name.starts_with('.') {
+                continue;
+            }
+
+            let full_path = entry.path();
+
+            if file_type.is_dir() {
+                dirs_to_visit.push(full_path.clone());
+            }
+
+            // Compute relative path from workspace root
+            let relative_path = full_path
+                .strip_prefix(&workspace)
+                .unwrap_or(&full_path)
+                .to_string_lossy()
+                .into_owned()
+                .replace('\\', "/");
+
+            entries.push(json!({
+                "name": name,
+                "path": relative_path,
+                "is_dir": file_type.is_dir(),
+                "size": metadata.map(|m| m.len()).unwrap_or(0),
+            }));
         }
-
-        // Compute relative path from workspace root
-        let full_path = entry.path();
-        let relative_path = full_path
-            .strip_prefix(&workspace)
-            .unwrap_or(&full_path)
-            .to_string_lossy()
-            .into_owned()
-            .replace('\\', "/");
-
-        entries.push(json!({
-            "name": name,
-            "path": relative_path,
-            "is_dir": file_type.is_dir(),
-            "size": metadata.map(|m| m.len()).unwrap_or(0),
-        }));
     }
 
     // Sort: directories first, then by name

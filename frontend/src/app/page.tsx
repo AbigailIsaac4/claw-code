@@ -5,10 +5,11 @@ import { Button, Input, Modal, Typography, Space, Avatar, App as AntdApp, Toolti
 import { Bubble, Conversations, Welcome, Sender, Think, ThoughtChain, Actions } from '@ant-design/x';
 import type { BubbleListProps } from '@ant-design/x';
 import {
-  DeleteOutlined, UserOutlined, LockOutlined, PaperClipOutlined,
-  RobotOutlined, CopyOutlined, FolderOutlined, FileOutlined,
-  ReloadOutlined, GlobalOutlined, SyncOutlined, AppstoreOutlined,
-} from '@ant-design/icons';
+  Trash2, CircleUser, Lock, Paperclip,
+  Bot, Copy, Folder, FileText,
+  RefreshCw, Globe, RefreshCcw, LayoutGrid,
+  ChevronRight, Sparkles
+} from 'lucide-react';
 import { createStyles } from 'antd-style';
 import { parseMessageContent } from '@/utils/messageParser';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -58,15 +59,15 @@ interface ActionRequest { action_id: string; tool?: string; required_mode?: stri
 const useStyle = createStyles(({ token, css }) => ({
   layout: css`
     width: 100%; height: 100vh; display: flex;
-    background: ${token.colorBgContainer};
+    background: #ffffff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   `,
   sider: css`
-    background: ${token.colorBgLayout}80;
-    width: 280px; height: 100%;
+    background: #f8fafc;
+    width: 260px; height: 100%;
     display: flex; flex-direction: column;
     padding: 0 12px; box-sizing: border-box;
-    border-right: 1px solid ${token.colorBorderSecondary};
+    border-right: 1px solid #e2e8f0;
   `,
   logo: css`
     display: flex; align-items: center; justify-content: start;
@@ -98,12 +99,17 @@ const useStyle = createStyles(({ token, css }) => ({
   chatList: css`
     flex: 1; overflow-y: auto;
     display: flex; flex-direction: column; align-items: center; width: 100%;
+    background: #ffffff;
   `,
   placeholder: css`
     padding: ${token.paddingLG}px; box-sizing: border-box; width: 100%;
   `,
   sender: css`
-    width: 100%; max-width: 840px; margin: 0 auto;
+    width: 100%; max-width: 768px; margin: 0 auto;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
   `,
 }));
 
@@ -140,8 +146,8 @@ const MessageFooter: React.FC<{ content: string; status?: string; id?: string | 
   return (
     <Actions
       items={[
-        { key: 'copy', actionRender: <Actions.Copy text={content} /> },
-        { key: 'retry', icon: <SyncOutlined />, label: 'Retry', onItemClick: () => { if (id) ctx.onReload?.(id, {}); } },
+        { key: 'copy', actionRender: <Actions.Copy icon={<Copy size={14}/>} text={content} /> },
+        { key: 'retry', icon: <RefreshCcw size={14} />, label: 'Retry', onItemClick: () => { if (id) ctx.onReload?.(id, {}); } },
       ]}
     />
   );
@@ -149,8 +155,7 @@ const MessageFooter: React.FC<{ content: string; status?: string; id?: string | 
 
 // ==================== Status Header ====================
 const STATUS_CONFIG: Record<string, { title: string; status: string }> = {
-  loading: { title: 'Thinking...', status: 'loading' },
-  updating: { title: 'Generating...', status: 'loading' },
+  loading: { title: 'Generating...', status: 'loading' },
   success: { title: 'Done', status: 'success' },
   error: { title: 'Failed', status: 'error' },
   abort: { title: 'Aborted', status: 'abort' },
@@ -343,27 +348,28 @@ export default function ChatPage() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {up.files.map(fp => (
                     <div key={fp} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
-                      <PaperClipOutlined style={{ color: token.colorPrimary }} />
+                      <Paperclip size={14} style={{ color: token.colorPrimary }} />
                       <Text style={{ fontSize: 13 }}>{fp.split('/').pop()}</Text>
                     </div>
                   ))}
                 </div>
               </div>
-              <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: -4, right: -4, opacity: 0 }} />
+              <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: -4, right: -4, opacity: 0 }} />
             </div>
           );
         }
         return (
           <div className="msg-hover-copy" style={{ position: 'relative' }}>
             <div style={{ whiteSpace: 'pre-wrap', paddingRight: 28 }}>{content}</div>
-            <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
+            <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
           </div>
         );
       },
     },
     ai: {
       placement: 'start',
-      avatar: <Avatar icon={<RobotOutlined />} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)`, flexShrink: 0 }} />,
+      typing: true,
+      avatar: <Avatar icon={<Bot size={20} color="#fff" />} style={{ background: '#10a37f', flexShrink: 0 }} />,
       header: (_content: string, info) => {
         const cfg = STATUS_CONFIG[info.status as string];
         if (!cfg) return null;
@@ -377,23 +383,23 @@ export default function ChatPage() {
             style={{ marginBottom: 8 }}
             status={cfg.status as any}
             variant="solid"
-            icon={<GlobalOutlined />}
+            icon={<Globe size={14} />}
             title={toolLabel}
           />
         );
       },
       contentRender: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
-        const isStreaming = info.status === 'loading' || info.status === 'updating';
+        const isStreaming = info.status === 'loading';
         const handleCopy = async () => { await copyToClipboard(parsed.cleanContent) ? message.success('Copied') : message.error('Failed'); };
         return (
           <MsgCtx.Provider value={{ status: info.status }}>
-            <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.7 }}>
+            <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.75 }}>
               <ThinkComponent content={parsed.thinkingBlock} isStreaming={isStreaming} status={info.status} />
-              <div style={{ paddingRight: 28 }}>
+              <div style={{ paddingRight: 28, color: '#334155', fontSize: '15px' }}>
                 <ReactMarkdown>{parsed.cleanContent || ''}</ReactMarkdown>
               </div>
-              <Button type="text" size="small" icon={<CopyOutlined />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
+              <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
             </div>
           </MsgCtx.Provider>
         );
@@ -420,8 +426,8 @@ export default function ChatPage() {
   const sider = !isSharedView && (
     <div className={styles.sider}>
       <div className={styles.logo}>
-        <Avatar shape="square" size={30} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)`, borderRadius: 8 }} icon={<RobotOutlined />} />
-        <span>Claw Agent</span>
+        <Avatar shape="square" size={30} style={{ background: '#10a37f', borderRadius: 8 }} icon={<Sparkles size={16} color="#fff" />} />
+        <span style={{ color: '#1e293b' }}>Claw Agent</span>
       </div>
       <Conversations
         creation={{ onClick: createNewSession, label: 'New Chat' }}
@@ -436,17 +442,17 @@ export default function ChatPage() {
         groupable
         styles={{ item: { padding: '0 8px', borderRadius: token.borderRadius } }}
         menu={(item) => ({
-          items: [{ label: '删除', key: 'delete', icon: <DeleteOutlined />, danger: true }],
+          items: [{ label: 'Delete', key: 'delete', icon: <Trash2 size={14} />, danger: true }],
           onClick: ({ key }: { key: string }) => { if (key === 'delete') deleteSession(item.key); },
         })}
       />
       <div className={styles.sideFooter}>
-        <Avatar size={24} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)` }} icon={<UserOutlined />} />
+        <Avatar size={24} style={{ background: '#334155' }} icon={<CircleUser size={14} color="#fff" />} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Text strong style={{ fontSize: 12, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fullName}</Text>
+          <Text strong style={{ fontSize: 12, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#1e293b' }}>{fullName}</Text>
         </div>
         <Tooltip title="Sign out">
-          <Button type="text" size="small" onClick={handleLogout} icon={<UserOutlined />} style={{ color: token.colorTextQuaternary }} />
+          <Button type="text" size="small" onClick={handleLogout} icon={<CircleUser size={16} />} style={{ color: token.colorTextQuaternary }} />
         </Tooltip>
       </div>
     </div>
@@ -461,16 +467,13 @@ export default function ChatPage() {
           items={activeSession.messages.map(msg => {
             const isLastMsg = activeSession.messages[activeSession.messages.length - 1]?.id === msg.id;
             const isStreaming = loading && isLastMsg && msg.role === 'assistant';
-            // Use 'loading' only for empty content (skeleton), 'updating' for content being streamed
-            const status = isStreaming
-              ? (msg.content && msg.content.trim() ? 'updating' : 'loading')
-              : undefined;
+            const isEmpty = !msg.content || !msg.content.trim();
             return {
               key: msg.id,
               role: msg.role === 'user' ? 'user' : 'ai',
               content: msg.content || ' ',
-              loading: false,
-              status,
+              loading: isStreaming && isEmpty,
+              status: isStreaming ? 'loading' : undefined,
               extraInfo: { toolCalls: msg.toolCalls },
             };
           })}
@@ -481,7 +484,7 @@ export default function ChatPage() {
         <Flex vertical style={{ maxWidth: 840, flex: 1, justifyContent: 'center' }} gap={16} align="center" className={styles.placeholder}>
           <Welcome
             variant="borderless"
-            icon={<Avatar size={56} icon={<RobotOutlined style={{ fontSize: 32 }} />} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)` }} />}
+            icon={<Avatar size={56} icon={<Sparkles size={28} color="#fff" />} style={{ background: '#10a37f' }} />}
             title="Hello, I'm Claw Agent"
             description="I can write code, run commands, analyze files, and more. Start a conversation below or type / to select a skill."
           />
@@ -543,7 +546,7 @@ export default function ChatPage() {
                 onMouseEnter={e => { e.currentTarget.style.background = token.colorFillQuaternary; }}
                 onMouseLeave={e => { e.currentTarget.style.background = token.colorBgContainer; }}
               >
-                <RobotOutlined style={{ color: token.colorPrimary, flexShrink: 0 }} />
+                <Bot size={16} style={{ color: token.colorPrimary, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>/{sn}</div>
                   <div style={{ fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill.description}</div>
@@ -568,7 +571,7 @@ export default function ChatPage() {
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {uploadedFiles.map(f => (
                   <Tag key={f} closable onClose={() => setUploadedFiles(prev => prev.filter(x => x !== f))}
-                    icon={<PaperClipOutlined />} style={{ margin: 0, fontSize: 12 }}>
+                    icon={<Paperclip size={12} />} style={{ margin: 0, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
                     {f.split('/').pop()}
                   </Tag>
                 ))}
@@ -578,11 +581,13 @@ export default function ChatPage() {
         }
         prefix={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <PaperClipOutlined
-              style={{ fontSize: 18, cursor: 'pointer', color: token.colorTextQuaternary }}
-              title="Upload file"
-              onClick={() => document.getElementById('file-upload-input')?.click()}
-            />
+            <Tooltip title="Upload file">
+              <Paperclip
+                size={18}
+                style={{ cursor: 'pointer', color: token.colorTextQuaternary }}
+                onClick={() => document.getElementById('file-upload-input')?.click()}
+              />
+            </Tooltip>
             <Popover
               content={
                 <div style={{ maxHeight: 320, overflowY: 'auto', width: 280 }}>
@@ -598,8 +603,8 @@ export default function ChatPage() {
                         onMouseEnter={e => { e.currentTarget.style.background = token.colorFillTertiary; }}
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                       >
-                        <div style={{ fontWeight: 500, color: token.colorPrimary, marginBottom: 4, fontSize: 13 }}>
-                          <RobotOutlined /> {skill.name}
+                        <div style={{ fontWeight: 500, color: token.colorPrimary, marginBottom: 4, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Bot size={14} /> {skill.name}
                         </div>
                         <div style={{ fontSize: 12, color: token.colorTextSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {skill.description}
@@ -612,10 +617,12 @@ export default function ChatPage() {
               trigger="click"
               placement="topLeft"
             >
-              <AppstoreOutlined
-                style={{ fontSize: 18, cursor: 'pointer', color: token.colorTextQuaternary }}
-                title="Select skill"
-              />
+              <Tooltip title="Select skill">
+                <LayoutGrid
+                  size={18}
+                  style={{ cursor: 'pointer', color: token.colorTextQuaternary }}
+                />
+              </Tooltip>
             </Popover>
           </div>
         }
@@ -628,7 +635,7 @@ export default function ChatPage() {
   const sharedCTA = isSharedView && (
     <div style={{ padding: '24px 32px', textAlign: 'center', borderTop: `1px solid ${token.colorBorderSecondary}` }}>
       <Space style={{ marginBottom: 12 }}>
-        <RobotOutlined style={{ color: token.colorPrimary }} />
+        <Sparkles size={16} style={{ color: token.colorPrimary }} />
         <Text type="secondary">Want to try it out?</Text>
       </Space>
       <div><Button type="primary" onClick={() => { window.location.href = '/'; }}>Sign in to get started</Button></div>
@@ -637,10 +644,10 @@ export default function ChatPage() {
 
   // --- Workspace sidebar ---
   const workspaceSider = !isSharedView && (
-    <div style={{ width: 280, height: '100%', display: 'flex', flexDirection: 'column', background: token.colorBgContainer, borderLeft: `1px solid ${token.colorBorderSecondary}` }}>
-      <div style={{ padding: '16px', borderBottom: `1px solid ${token.colorBorderSecondary}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text strong style={{ fontSize: 15 }}>Workspace</Text>
-        <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => loadWorkspaceFiles(workspaceSubPath || undefined)} loading={workspaceFilesLoading} />
+    <div style={{ width: 280, height: '100%', display: 'flex', flexDirection: 'column', background: '#f8fafc', borderLeft: '1px solid #e2e8f0' }}>
+      <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text strong style={{ fontSize: 15, color: '#1e293b' }}>Workspace</Text>
+        <Button type="text" size="small" icon={<RefreshCw size={14} />} onClick={() => loadWorkspaceFiles(workspaceSubPath || undefined)} loading={workspaceFilesLoading} />
       </div>
       <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: token.colorFillQuaternary }}>
         <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -651,12 +658,12 @@ export default function ChatPage() {
         {workspaceSubPath && (
           <div style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: token.colorPrimary }}
             onClick={() => { setWorkspaceSubPath(''); void loadWorkspaceFiles(); }}>
-            <FolderOutlined /> ..
+            <Folder size={14} /> ..
           </div>
         )}
         {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <FolderOutlined style={{ fontSize: 32, color: token.colorBorder, marginBottom: 8 }} />
+            <Folder size={32} style={{ color: token.colorBorder, marginBottom: 8 }} />
             <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
               {!activeSessionId ? 'Select a session' : workspaceSubPath === 'output' ? 'No result files' : 'No files here'}
             </Text>
@@ -666,7 +673,7 @@ export default function ChatPage() {
             <div className="workspace-file-item"
               style={{ padding: '6px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, borderRadius: 4, margin: '1px 4px' }}
               onClick={() => file.is_dir ? (setWorkspaceSubPath(file.path), void loadWorkspaceFiles(file.path)) : downloadWorkspaceFileFromSidebar(file.path)}>
-              {file.is_dir ? <FolderOutlined style={{ color: token.colorWarning, fontSize: 14 }} /> : <FileOutlined style={{ color: token.colorTextQuaternary, fontSize: 14 }} />}
+              {file.is_dir ? <Folder size={14} style={{ color: token.colorWarning }} /> : <FileText size={14} style={{ color: token.colorTextQuaternary }} />}
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
               {!file.is_dir && <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size/1024).toFixed(1)}K` : `${(file.size/1048576).toFixed(1)}M`}</Text>}
             </div>
@@ -682,13 +689,13 @@ export default function ChatPage() {
       {/* Login modal */}
       <Modal open={showLogin} closable={false} keyboard={false} mask={{ closable: false }} footer={null} width={400} styles={{ body: { padding: '32px 32px 28px' } }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <Avatar size={56} style={{ background: `linear-gradient(135deg, ${token.colorPrimary}, #7c3aed)`, borderRadius: 14, marginBottom: 16 }} icon={<RobotOutlined />} />
-          <Typography.Title level={3} style={{ margin: '0 0 8px' }}>Claw Agent</Typography.Title>
+          <Avatar size={56} style={{ background: '#10a37f', borderRadius: 14, marginBottom: 16 }} icon={<Sparkles size={28} color="#fff" />} />
+          <Typography.Title level={3} style={{ margin: '0 0 8px', color: '#1e293b' }}>Claw Agent</Typography.Title>
           <Text type="secondary">Sign in to start building</Text>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Input size="large" prefix={<UserOutlined style={{ color: token.colorTextQuaternary }} />} placeholder="Work email" value={email} onChange={e => setEmail(e.target.value)} allowClear />
-          <Input.Password size="large" prefix={<LockOutlined style={{ color: token.colorTextQuaternary }} />} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} onPressEnter={handleLogin} allowClear />
+          <Input size="large" prefix={<CircleUser size={16} style={{ color: token.colorTextQuaternary }} />} placeholder="Work email" value={email} onChange={e => setEmail(e.target.value)} allowClear />
+          <Input.Password size="large" prefix={<Lock size={16} style={{ color: token.colorTextQuaternary }} />} placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} onPressEnter={handleLogin} allowClear />
           <Button type="primary" size="large" block loading={loginLoading} onClick={handleLogin} style={{ height: 44, fontWeight: 600, marginTop: 4 }}>Sign in</Button>
         </div>
         <div style={{ marginTop: 20, padding: '12px 16px', background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
