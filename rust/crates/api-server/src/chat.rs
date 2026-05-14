@@ -297,7 +297,8 @@ pub async fn chat_completions(
             4. When you encounter an error that requires user decision (e.g. retry, skip, or change approach), use `AskUserQuestion`.\n\
             5. When presenting deliverables or intermediate results that need user approval before proceeding to the next phase, use `AskUserQuestion`.\n\
             6. For straightforward execution steps (installing packages, running commands, reading/writing files), proceed automatically without asking.\n\
-            7. Always show your thinking process and execution chain clearly in your text responses so the user can follow along."
+            7. Always show your thinking process and execution chain clearly in your text responses so the user can follow along.\n\
+            8. FILE READING: Pay attention to file extensions. Do NOT use `read_file` for `.pdf`, `.docx`, `.xlsx`, or other binary formats. Instead, use the corresponding Skill (if available) or execute a bash/python script to parse them."
                 .to_string(),
         ];
         // Inject available skills listing so the LLM knows what skills it can load
