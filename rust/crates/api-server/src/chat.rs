@@ -286,7 +286,7 @@ pub async fn chat_completions(
         }
 
         let mut system_prompts = vec![
-            "The current working directory is this session's isolated local workspace. Use relative file paths for uploaded and generated files; do not assume a /workspace absolute directory exists."
+            "The current working directory is this session's isolated local workspace. Relative file paths resolve against the workspace directory. Absolute paths are allowed when referencing system files (e.g. skill scripts)."
                 .to_string(),
             // Interactive agent behavior: use AskUserQuestion to involve the user
             "You are an interactive AI agent on a collaborative platform. The user is a non-technical professional who cares about results, not implementation details.\n\n\

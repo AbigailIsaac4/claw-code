@@ -731,9 +731,9 @@ fn normalize_tool_input_paths(
 ) -> Result<Value, String> {
     if let Value::Object(object) = &mut input {
         match tool_name {
-            "read_file" => normalize_existing_path_field(object, "path", workspace)?,
+            "read_file" => normalize_read_path_field(object, "path", workspace)?,
             "write_file" => normalize_write_path_field(object, "path", workspace)?,
-            "edit_file" => normalize_existing_path_field(object, "path", workspace)?,
+            "edit_file" => normalize_read_path_field(object, "path", workspace)?,
             _ => {}
         }
     }
@@ -808,17 +808,29 @@ fn inject_bash_config(
     Ok(input)
 }
 
-fn normalize_existing_path_field(
+/// Normalize a read-path field.  Absolute paths are passed through verbatim
+/// (the underlying `file_ops::read_file` canonicalizes them, just like the
+/// CLI does).  Relative paths are resolved against the session workspace and
+/// must stay inside it.
+fn normalize_read_path_field(
     object: &mut Map<String, Value>,
     field: &str,
     workspace: &Path,
 ) -> Result<(), String> {
     if let Some(Value::String(value)) = object.get_mut(field) {
-        let resolved = resolve_existing_workspace_path(workspace, value)?;
-        *value = resolved.absolute_path.to_string_lossy().into_owned();
+        let trimmed = value.trim().replace('\\', "/");
+        if trimmed.starts_with('/') || (trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':') {
+            // Absolute path — pass through; the tool layer will canonicalize.
+            *value = trimmed;
+        } else {
+            // Relative path — resolve inside workspace (same as before).
+            let resolved = resolve_existing_workspace_path(workspace, value)?;
+            *value = resolved.absolute_path.to_string_lossy().into_owned();
+        }
     }
     Ok(())
 }
+
 
 fn normalize_write_path_field(
     object: &mut Map<String, Value>,
@@ -826,8 +838,14 @@ fn normalize_write_path_field(
     workspace: &Path,
 ) -> Result<(), String> {
     if let Some(Value::String(value)) = object.get_mut(field) {
-        let resolved = resolve_workspace_write_path(workspace, value)?;
-        *value = resolved.absolute_path.to_string_lossy().into_owned();
+        let trimmed = value.trim().replace('\\', "/");
+        if trimmed.starts_with('/') || (trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':') {
+            // Absolute path — pass through; the tool layer will use it directly.
+            *value = trimmed;
+        } else {
+            let resolved = resolve_workspace_write_path(workspace, value)?;
+            *value = resolved.absolute_path.to_string_lossy().into_owned();
+        }
     }
     Ok(())
 }

@@ -150,17 +150,7 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
           return {
             key: String(idx),
             label: (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%' }}>
-                <span style={{ 
-                  background: token.colorFillAlter, 
-                  padding: '2px 8px', 
-                  borderRadius: 12, 
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: token.colorTextSecondary
-                }}>
-                  Step {idx + 1}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%', opacity: 0.85 }}>
                 {toolIcon(tool.name)}
                 <span style={{ fontWeight: 600, color: token.colorTextHeading, fontSize: 14 }}>{tool.name}</span>
                 <span style={{ color: token.colorTextTertiary, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
