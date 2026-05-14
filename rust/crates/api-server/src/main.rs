@@ -103,7 +103,7 @@ async fn main() {
         // Platform stats
         .route("/v1/stats", get(agent_routes::platform_stats))
         .layer(cors)
-        .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB limit
+        .layer(DefaultBodyLimit::max(150 * 1024 * 1024)) // 150MB limit
         .with_state(state);
 
     let port: u16 = std::env::var("PORT")

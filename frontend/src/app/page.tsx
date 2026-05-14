@@ -234,7 +234,7 @@ export default function ChatPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { message.error('File too large (max 10MB).'); return; }
+    if (file.size > 150 * 1024 * 1024) { message.error('File too large (max 150MB).'); return; }
     message.loading({ content: 'Uploading...', key: 'upload' });
     const formData = new FormData();
     formData.append('file', file);
@@ -635,43 +635,45 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Skill popup */}
-      {skillPopupOpen && skillsFiltered.length > 0 && (
-        <div style={{
-          marginBottom: 8, padding: '6px 0', background: token.colorBgElevated,
-          borderRadius: token.borderRadiusLG, boxShadow: token.boxShadowSecondary,
-          maxHeight: 260, overflowY: 'auto', border: `1px solid ${token.colorBorderSecondary}`,
-        }}>
-          {skillsFiltered.map(skill => {
-            const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
-            return (
-              <div key={skill.name} onClick={() => selectSkill(skill)}
-                style={{
-                  padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
-                  borderBottom: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorBgContainer,
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = token.colorFillQuaternary; }}
-                onMouseLeave={e => { e.currentTarget.style.background = token.colorBgContainer; }}
-              >
-                <Bot size={16} style={{ color: token.colorPrimary, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>/{sn}</div>
-                  <div style={{ fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill.description}</div>
+      <div style={{ position: 'relative' }}>
+        {/* Skill popup */}
+        {skillPopupOpen && skillsFiltered.length > 0 && (
+          <div style={{
+            position: 'absolute', bottom: '100%', left: 0, width: '100%', zIndex: 10,
+            marginBottom: 8, padding: '6px 0', background: token.colorBgElevated,
+            borderRadius: token.borderRadiusLG, boxShadow: token.boxShadowSecondary,
+            maxHeight: 260, overflowY: 'auto', border: `1px solid ${token.colorBorderSecondary}`,
+          }}>
+            {skillsFiltered.map(skill => {
+              const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
+              return (
+                <div key={skill.name} onClick={() => selectSkill(skill)}
+                  style={{
+                    padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                    background: token.colorBgContainer,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = token.colorFillQuaternary; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = token.colorBgContainer; }}
+                >
+                  <Bot size={16} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>/{sn}</div>
+                    <div style={{ fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill.description}</div>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
 
-      <Sender
-        value={input}
-        onChange={handleInputChange}
-        onSubmit={(val) => { if (val.trim()) sendMessage(val); }}
-        onCancel={() => {}}
-        loading={loading}
-        className={styles.sender}
+        <Sender
+          value={input}
+          onChange={handleInputChange}
+          onSubmit={(val) => { if (val.trim()) sendMessage(val); }}
+          onCancel={() => {}}
+          loading={loading}
+          className={styles.sender}
         placeholder="Ask me anything... Type / to select a skill"
         header={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -735,6 +737,7 @@ export default function ChatPage() {
           </div>
         }
       />
+      </div>
       <input type="file" id="file-upload-input" style={{ display: 'none' }} onChange={handleFileUpload} />
     </div>
   );
