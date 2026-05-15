@@ -10,7 +10,7 @@ pub fn workspace_root() -> PathBuf {
     std::env::var("CLAW_WORKSPACE_ROOT")
         .or_else(|_| std::env::var("WORKSPACE_ROOT"))
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("./data/workspaces"))
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join("data").join("workspaces"))
 }
 
 pub fn session_workspace(user_id: &str, session_id: &str) -> Result<PathBuf, String> {

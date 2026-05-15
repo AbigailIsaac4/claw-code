@@ -14,9 +14,10 @@ export interface Session {
   title: string;
   messages: Message[];
   active?: boolean;
+  updated_at?: string;
 }
 
-type SessionSummary = Pick<Session, 'id' | 'title'>;
+type SessionSummary = Pick<Session, 'id' | 'title' | 'updated_at'>;
 
 export function useSessions(token: string | null, onAuthError?: () => void) {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -146,12 +147,13 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
         const loadedSession = {
           id,
           title: sessionList.find(s => s.id === id)?.title || 'History',
+          updated_at: sessionList.find(s => s.id === id)?.updated_at,
           messages: loadedMessages,
           active: isActiveTurn,
         };
 
         setSessions(prev => {
-          const list = prev.length > 0 ? prev : sessionList.map(s => ({ id: s.id, title: s.title, messages: [] }));
+          const list = prev.length > 0 ? prev : sessionList.map(s => ({ id: s.id, title: s.title, updated_at: s.updated_at, messages: [] }));
           if (!list.some(s => s.id === id)) {
             return [loadedSession, ...list];
           }
@@ -187,6 +189,21 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
     }
   }, [loadSessionDetail, createNewSession]);
 
+  const renameSession = useCallback(async (id: string, newTitle: string, authToken: string) => {
+    try {
+      const res = await fetch(apiUrl(`/v1/sessions/${id}`), {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle })
+      });
+      if (res.ok) {
+        setSessions(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   return {
     sessions,
     setSessions,
@@ -199,6 +216,7 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
     updateSessionMessages,
     createNewSession,
     deleteSession,
+    renameSession,
     loadSessionDetail,
     loadSessions,
   };

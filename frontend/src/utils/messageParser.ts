@@ -12,11 +12,18 @@ export interface ParsedMessage {
 }
 
 const WORKSPACE_PREFIX = /^\/?workspace\//i;
+// 匹配除了特定标点符号和空格以外的所有字符（支持中文、大多数Unicode字符）
+const namePart = `[^\\s\\/\\\\:"*?<>|\`(),;]+`;
+const namePartWithSpace = `[^\`\n]+`; // 在反引号内允许空格等字符
+
 const WORKSPACE_FILE_PATTERNS = [
-  /`((?:\/workspace\/|workspace\/)?[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+)`/g,
-  /`((?:\/workspace\/|workspace\/)?[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)`/g,
-  /(?:^|[\s(])((?:\/workspace\/|workspace\/)?[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.[A-Za-z0-9._-]+)(?=$|[\s),.;:])/gm,
-  /(?:^|[\s(])((?:\/workspace\/|workspace\/)?[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)(?=$|[\s),.;:])/gm,
+  // 匹配反引号内的带路径文件或普通文件 (支持空格、中文等)
+  new RegExp(`\\\`((?:\\/workspace\\/|workspace\\/)?${namePartWithSpace}(?:\\/${namePartWithSpace})*\\.[A-Za-z0-9]+)\\\``, 'g'),
+  new RegExp(`\\\`((?:\\/workspace\\/|workspace\\/)?${namePartWithSpace}(?:\\/${namePartWithSpace})+)\\\``, 'g'),
+  
+  // 匹配普通文本中的文件路径 (必须带后缀名或路径，不支持带空格)
+  new RegExp(`(?:^|[\\s(])((?:\\/workspace\\/|workspace\\/)?${namePart}(?:\\/${namePart})+\\.${namePart})(?=$|[\\s),.;:])`, 'gm'),
+  new RegExp(`(?:^|[\\s(])((?:\\/workspace\\/|workspace\\/)?${namePart}\\.[A-Za-z0-9]+)(?=$|[\\s),.;:])`, 'gm'),
 ];
 
 function normalizeWorkspaceFile(candidate: string): string | null {

@@ -95,6 +95,9 @@ export function useChatStream({
     const ctrl = new AbortController();
     let streamCompleted = false;
 
+    const isNewChat = activeSession.title === 'New Chat' && activeSession.messages.length === 0;
+    const newTitle = isNewChat ? finalInput.substring(0, 15) + '...' : activeSession.title;
+
     try {
       await fetchEventSource(apiUrl('/v1/chat/completions'), {
         method: 'POST',
@@ -104,7 +107,7 @@ export function useChatStream({
         },
         body: JSON.stringify({
           session_id: sessionId,
-          title: activeSession.title,
+          title: newTitle,
           input: userMsg.content,
           permission_mode: agentMode,
         }),

@@ -1,16 +1,17 @@
 'use client';
 
 import { useState, useRef, useEffect, memo, createContext, useContext } from 'react';
-import { Button, Input, Modal, Typography, Space, Avatar, App as AntdApp, Tooltip, Radio, Tag, theme, Flex, Popover } from 'antd';
+import { Button, Input, Modal, Typography, Space, Avatar, App as AntdApp, Tooltip, Radio, Tag, theme, Flex, Popover, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 import { Bubble, Conversations, Welcome, Sender, Think, ThoughtChain, Actions } from '@ant-design/x';
 import type { BubbleListProps } from '@ant-design/x';
 import {
   Trash2, CircleUser, Lock, Paperclip,
   Bot, Copy, Folder, FileText,
   RefreshCw, Globe, RefreshCcw, LayoutGrid,
-  ChevronRight, Sparkles
+  ChevronRight, Sparkles, MoreHorizontal, Edit3, Info
 } from 'lucide-react';
-import { ArrowUpOutlined } from '@ant-design/icons';
+import { ArrowUpOutlined, ShareAltOutlined, SettingOutlined } from '@ant-design/icons';
 import { createStyles } from 'antd-style';
 import { parseMessageContent } from '@/utils/messageParser';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
@@ -60,7 +61,7 @@ interface ActionRequest { action_id: string; tool?: string; required_mode?: stri
 const useStyle = createStyles(({ token, css }) => ({
   layout: css`
     width: 100%; height: 100vh; display: flex;
-    background: #ffffff;
+    background: #f8fafc;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   `,
   sider: css`
@@ -100,7 +101,7 @@ const useStyle = createStyles(({ token, css }) => ({
   chatList: css`
     flex: 1; overflow-y: auto;
     display: flex; flex-direction: column; align-items: center; width: 100%;
-    background: #ffffff;
+    background: #f8fafc;
   `,
   placeholder: css`
     padding: ${token.paddingLG}px; box-sizing: border-box; width: 100%;
@@ -186,7 +187,7 @@ export default function ChatPage() {
     sessions, setSessions, activeSessionId, setActiveSessionId, activeSession,
     loadingRef, streamingSessionRef,
     withAssistantTail, updateSessionMessages,
-    createNewSession, deleteSession,
+    createNewSession, deleteSession, renameSession,
     loadSessionDetail, loadSessions: loadSessionsRaw,
   } = useSessions(authToken, handleLogout);
 
@@ -208,6 +209,10 @@ export default function ChatPage() {
   const [isSharedView, setIsSharedView] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
 
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameInput, setRenameInput] = useState('');
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+
   const {
     sendMessage: sendMessageRaw,
     activeToolName,
@@ -224,6 +229,37 @@ export default function ChatPage() {
     onActionRequired: (data) => setActionReq(data),
     onQuestionRequired: (data) => { setQuestionReq(data); setQuestionAnswer(''); },
   });
+
+  const handleMenuClick: MenuProps['onClick'] = (e) => {
+    if (e.key === 'rename') {
+      setRenameInput(activeSession?.title || '');
+      setIsRenameModalOpen(true);
+    } else if (e.key === 'details') {
+      setIsDetailsModalOpen(true);
+    } else if (e.key === 'delete') {
+      Modal.confirm({
+        title: '删除任务',
+        content: '确定要删除这个任务吗？此操作不可恢复。',
+        okText: '确定',
+        cancelText: '取消',
+        okType: 'danger',
+        onOk: () => {
+          if (activeSessionId) deleteSession(activeSessionId);
+        }
+      });
+    }
+  };
+
+  const menuProps = {
+    items: [
+      { key: 'rename', label: '重命名', icon: <Edit3 size={14} /> },
+      { key: 'details', label: '任务详情', icon: <Info size={14} /> },
+      { key: 'delete', label: <span style={{ color: '#ff4d4f' }}>删除</span>, icon: <Trash2 size={14} color="#ff4d4f" /> },
+    ],
+    onClick: handleMenuClick,
+  };
+
+
 
   // --- Functions ---
   const loadSkills = async () => {
@@ -346,7 +382,7 @@ export default function ChatPage() {
         const handleCopy = async () => { await copyToClipboard(content) ? message.success('Copied') : message.error('Failed'); };
         if (up) {
           return (
-            <div className="msg-hover-copy" style={{ position: 'relative' }}>
+            <div className="msg-hover-copy" style={{ position: 'relative', paddingBottom: 24 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
                 {up.cleanContent && <div style={{ whiteSpace: 'pre-wrap' }}>{up.cleanContent}</div>}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -358,14 +394,14 @@ export default function ChatPage() {
                   ))}
                 </div>
               </div>
-              <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: -4, right: -4, opacity: 0 }} />
+              <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', bottom: 0, left: 0, opacity: 0 }} />
             </div>
           );
         }
         return (
-          <div className="msg-hover-copy" style={{ position: 'relative' }}>
-            <div style={{ whiteSpace: 'pre-wrap', paddingRight: 28 }}>{content}</div>
-            <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
+          <div className="msg-hover-copy" style={{ position: 'relative', paddingBottom: 24 }}>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{content}</div>
+            <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', bottom: 0, left: 0, opacity: 0 }} />
           </div>
         );
       },
@@ -375,25 +411,7 @@ export default function ChatPage() {
       typing: true,
       variant: 'borderless',
       styles: { content: { padding: 0 } },
-      avatar: <Avatar icon={<Bot size={20} color="#fff" />} style={{ background: '#10a37f', flexShrink: 0 }} />,
-      header: (_content: string, info) => {
-        const cfg = STATUS_CONFIG[info.status as string];
-        if (!cfg) return null;
-        const isActive = info.status === 'loading' || info.status === 'updating';
-        const iterPrefix = isActive && currentIteration > 1 ? `Step ${currentIteration} · ` : '';
-        const toolLabel = isActive && activeToolName
-          ? `${iterPrefix}${activeToolName}${activeToolSummary ? ': ' + activeToolSummary : ''}`
-          : `${iterPrefix}${cfg.title}`;
-        return (
-          <ThoughtChain.Item
-            style={{ marginBottom: 8 }}
-            status={cfg.status as any}
-            variant="solid"
-            icon={<Globe size={14} />}
-            title={toolLabel}
-          />
-        );
-      },
+      header: null,
       contentRender: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
         const isStreaming = info.status === 'loading';
@@ -404,16 +422,16 @@ export default function ChatPage() {
         const handleCopy = async () => { await copyToClipboard(parsed.cleanContent) ? message.success('Copied') : message.error('Failed'); };
         return (
           <MsgCtx.Provider value={{ status: info.status }}>
-            <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.6, marginTop: 4 }}>
+            <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.6, marginTop: 4, paddingBottom: 24 }}>
               <ThinkComponent content={parsed.thinkingBlock} isStreaming={isStreaming} status={info.status} />
               
               {hasPlanSteps && <PlanStepsCard steps={parsed.planSteps} isStreaming={isStreaming} />}
               {hasTools && <ToolRenderer toolCalls={toolCalls} />}
               
-              <div className="markdown-body" style={{ paddingRight: 28, color: '#334155', fontSize: '15px' }}>
+              <div className="markdown-body" style={{ color: '#334155', fontSize: '15px' }}>
                 <ReactMarkdown>{parsed.cleanContent || ''}</ReactMarkdown>
               </div>
-              <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
+              <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', bottom: 0, left: 0, opacity: 0 }} />
             </div>
           </MsgCtx.Provider>
         );
@@ -786,9 +804,18 @@ export default function ChatPage() {
         </div>
       </Modal>
 
-      <div className={styles.layout}>
+      <div className={styles.layout} style={{ filter: showLogin ? 'blur(4px)' : 'none', pointerEvents: showLogin ? 'none' : 'auto', userSelect: showLogin ? 'none' : 'auto' }}>
         {sider}
         <div className={styles.chat}>
+          <div style={{ position: 'absolute', top: 16, right: 24, display: 'flex', gap: 12, zIndex: 10 }}>
+            <Button type="text" icon={<ShareAltOutlined />} style={{ color: '#64748b' }} onClick={() => {
+              const url = `${window.location.origin}${window.location.pathname}?share=true&session=${activeSessionId}`;
+              navigator.clipboard.writeText(url).then(() => message.success('分享链接已复制'));
+            }}>分享</Button>
+            <Dropdown menu={menuProps} placement="bottomRight" trigger={['click']}>
+              <Button type="text" icon={<MoreHorizontal size={18} />} style={{ color: '#64748b' }} />
+            </Dropdown>
+          </div>
           {chatList}
           {chatSender}
           {sharedCTA}
@@ -807,6 +834,22 @@ export default function ChatPage() {
           <Button danger onClick={() => handleResolveAction(false)}>Reject</Button>
           <Button type="primary" onClick={() => handleResolveAction(true)}>Approve</Button>
         </Space>
+      </Modal>
+
+      <Modal title="重命名" open={isRenameModalOpen} onOk={() => {
+        if (activeSessionId && renameInput.trim() && authToken) {
+          renameSession(activeSessionId, renameInput.trim(), authToken);
+        }
+        setIsRenameModalOpen(false);
+      }} onCancel={() => setIsRenameModalOpen(false)}>
+        <Input value={renameInput} onChange={e => setRenameInput(e.target.value)} />
+      </Modal>
+
+      <Modal title="任务详情" open={isDetailsModalOpen} footer={null} onCancel={() => setIsDetailsModalOpen(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div><strong>任务名：</strong>{activeSession?.title}</div>
+          <div><strong>创建时间：</strong>{activeSession?.updated_at ? new Date(activeSession.updated_at).toLocaleString() : '未知'}</div>
+        </div>
       </Modal>
 
     </ChatCtx.Provider>

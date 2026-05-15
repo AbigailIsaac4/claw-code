@@ -45,6 +45,11 @@ async fn main() {
         }
     }
 
+    if std::env::var("CLAW_WORKSPACE_ROOT").is_err() {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        std::env::set_var("CLAW_WORKSPACE_ROOT", cwd.join("data").join("workspaces"));
+    }
+
     // 初始化数据库 (3.1)
     let pool = db::init_db().await.expect("Failed to initialize database");
 
@@ -65,7 +70,7 @@ async fn main() {
         .route("/v1/sessions", get(chat::list_sessions))
         .route(
             "/v1/sessions/:id",
-            get(chat::get_session).delete(chat::delete_session),
+            get(chat::get_session).delete(chat::delete_session).patch(chat::rename_session),
         )
         .route("/v1/sandbox/upload", post(sandbox_routes::upload_file))
         .route("/v1/sandbox/download", get(sandbox_routes::download_file))

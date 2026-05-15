@@ -214,8 +214,8 @@ pub async fn chat_completions(
         }
     };
 
-    // Ensure output/ directory exists for agent result files
-    let _ = std::fs::create_dir_all(workspace_dir.join("output"));
+    // 移除不必要的 output/ 目录创建，避免污染工作区
+    // let _ = std::fs::create_dir_all(workspace_dir.join("output"));
 
     // 通知前端实际使用的 session_id（尤其是前端未传时后端自动生成的情况）
     let session_id_for_event = session_id.clone();
@@ -564,20 +564,12 @@ pub async fn get_session(
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
     let user_id = user.as_ref().map(|user| user.user_id.clone());
-    let row = if let Some(u) = user.as_ref() {
-        sqlx::query("SELECT state FROM sessions WHERE id = ? AND user_id = ?")
-            .bind(&id)
-            .bind(&u.user_id)
-            .fetch_optional(&state.db)
-            .await
-    } else {
-        // 允许无登录的分享查看
-        sqlx::query("SELECT state FROM sessions WHERE id = ?")
-            .bind(&id)
-            .fetch_optional(&state.db)
-            .await
-    }
-    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    // 对于查看 session 的请求（分享链接），由于 id 是强随机 UUID，允许任何人查看
+    let row = sqlx::query("SELECT state FROM sessions WHERE id = ?")
+        .bind(&id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if let Some(record) = row {
         let state_str: String = sqlx::Row::get(&record, "state");
@@ -612,6 +604,31 @@ pub async fn delete_session(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct RenameSessionRequest {
+    pub title: String,
+}
+
+pub async fn rename_session(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(payload): Json<RenameSessionRequest>,
+) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
+    let result = sqlx::query("UPDATE sessions SET title = ? WHERE id = ? AND user_id = ?")
+        .bind(&payload.title)
+        .bind(&id)
+        .bind(&user.user_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if result.rows_affected() > 0 {
+        Ok(Json(serde_json::json!({"success": true})))
+    } else {
+        Err(axum::http::StatusCode::NOT_FOUND)
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::{

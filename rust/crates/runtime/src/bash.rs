@@ -279,10 +279,6 @@ fn prepare_command(
 
     let mut prepared = Command::new("sh");
     prepared.arg("-lc").arg(command).current_dir(cwd);
-    if sandbox_status.filesystem_active {
-        prepared.env("HOME", cwd.join(".sandbox-home"));
-        prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
-    }
     if let Some(env) = extra_env {
         prepared.envs(env);
     }
@@ -313,19 +309,14 @@ fn prepare_tokio_command(
 
     let mut prepared = TokioCommand::new("sh");
     prepared.arg("-lc").arg(command).current_dir(cwd);
-    if sandbox_status.filesystem_active {
-        prepared.env("HOME", cwd.join(".sandbox-home"));
-        prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
-    }
     if let Some(env) = extra_env {
         prepared.envs(env);
     }
     prepared
 }
 
-fn prepare_sandbox_dirs(cwd: &std::path::Path) {
-    let _ = std::fs::create_dir_all(cwd.join(".sandbox-home"));
-    let _ = std::fs::create_dir_all(cwd.join(".sandbox-tmp"));
+fn prepare_sandbox_dirs(_cwd: &std::path::Path) {
+    // 移除不必要的沙盒目录创建，避免污染工作区
 }
 
 #[cfg(test)]
