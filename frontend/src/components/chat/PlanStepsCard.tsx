@@ -15,56 +15,36 @@ export const PlanStepsCard: React.FC<Props> = ({ steps, isStreaming = false }) =
   const { token } = useToken();
   if (!steps || steps.length === 0) return null;
 
-  // Assuming the last generated step is the active one if streaming, else all done.
   const activeStep = isStreaming ? steps.length : steps.length + 1;
 
   return (
-    <div style={{ 
-      marginTop: 12, 
-      marginBottom: 12,
-      background: '#ffffff', 
-      border: `1px solid ${token.colorBorderSecondary}`, 
-      borderRadius: 16,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-      overflow: 'hidden'
-    }}>
-      <div style={{ 
-        padding: '12px 16px', 
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        background: '#f8fafc'
-      }}>
-        <Text strong style={{ fontSize: 13, color: token.colorTextHeading }}>任务进度</Text>
-        <Text style={{ fontSize: 12, color: token.colorTextTertiary }}>{Math.min(activeStep, steps.length)} / {steps.length}</Text>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', padding: '12px 16px', gap: 12 }}>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {steps.map((step, idx) => {
           const stepNum = idx + 1;
           const isActive = stepNum === activeStep;
           const isDone = stepNum < activeStep;
           
           return (
-            <div key={step.num} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <div style={{ marginTop: 2 }}>
+            <div key={step.num} style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: 0.85 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14 }}>
                 {isActive ? (
-                  <div style={{ width: 14, height: 14, borderRadius: '50%', background: token.colorPrimary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: token.colorPrimary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#fff', animation: 'pulse 1.5s infinite' }} />
                   </div>
                 ) : isDone ? (
-                  <CheckCircleFilled style={{ color: token.colorSuccess, fontSize: 14 }} />
+                  <CheckCircleFilled style={{ color: token.colorSuccess, fontSize: 12 }} />
                 ) : (
-                  <ClockCircleOutlined style={{ color: token.colorTextQuaternary, fontSize: 14 }} />
+                  <ClockCircleOutlined style={{ color: token.colorTextQuaternary, fontSize: 12 }} />
                 )}
               </div>
-              <div style={{ flex: 1 }}>
-                <Text style={{ 
-                  fontSize: 13, 
-                  color: isActive ? token.colorTextHeading : (isDone ? token.colorTextSecondary : token.colorTextTertiary),
-                  fontWeight: isActive ? 500 : 400
-                }}>
-                  {step.title}
-                </Text>
-              </div>
+              <Text style={{ 
+                fontSize: 13, 
+                color: isActive ? token.colorTextHeading : (isDone ? token.colorTextSecondary : token.colorTextTertiary),
+                fontWeight: isActive ? 500 : 400
+              }}>
+                {step.title}
+              </Text>
             </div>
           );
         })}

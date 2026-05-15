@@ -373,6 +373,8 @@ export default function ChatPage() {
     ai: {
       placement: 'start',
       typing: true,
+      variant: 'borderless',
+      styles: { content: { padding: 0 } },
       avatar: <Avatar icon={<Bot size={20} color="#fff" />} style={{ background: '#10a37f', flexShrink: 0 }} />,
       header: (_content: string, info) => {
         const cfg = STATUS_CONFIG[info.status as string];
@@ -402,7 +404,7 @@ export default function ChatPage() {
         const handleCopy = async () => { await copyToClipboard(parsed.cleanContent) ? message.success('Copied') : message.error('Failed'); };
         return (
           <MsgCtx.Provider value={{ status: info.status }}>
-            <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.75 }}>
+            <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.6, marginTop: 4 }}>
               <ThinkComponent content={parsed.thinkingBlock} isStreaming={isStreaming} status={info.status} />
               
               {hasPlanSteps && <PlanStepsCard steps={parsed.planSteps} isStreaming={isStreaming} />}
@@ -421,7 +423,7 @@ export default function ChatPage() {
         const hasFiles = parsed.workspaceFiles.length > 0;
         return (
           <div>
-            {hasFiles && <WorkspaceFiles files={parsed.workspaceFiles} onDownload={downloadWorkspaceFile} />}
+            {hasFiles && <WorkspaceFiles files={parsed.workspaceFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />}
             <MessageFooter content={parsed.cleanContent} status={info.status} id={info.key} />
           </div>
         );
@@ -756,39 +758,6 @@ export default function ChatPage() {
     </div>
   );
 
-  // --- Workspace sidebar ---
-  const workspaceSider = !isSharedView && (
-    <div style={{ width: 280, height: '100%', display: 'flex', flexDirection: 'column', background: '#f8fafc', borderLeft: '1px solid #e2e8f0' }}>
-      <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text strong style={{ fontSize: 15, color: '#1e293b' }}>结果文件</Text>
-        <Button type="text" size="small" icon={<RefreshCw size={14} />} onClick={() => loadWorkspaceFiles()} loading={workspaceFilesLoading} />
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-        {workspaceFiles.length === 0 && !workspaceFilesLoading ? (
-          <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <FileText size={32} style={{ color: token.colorBorder, marginBottom: 8 }} />
-            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
-              {!activeSessionId ? '请选择一个会话' : '暂无结果文件'}
-            </Text>
-            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
-              Agent 生成的文档、图片等将展示在此处
-            </Text>
-          </div>
-        ) : workspaceFiles.map((file, idx) => (
-          <Tooltip key={idx} title="点击下载" placement="left">
-            <div className="workspace-file-item"
-              style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, borderRadius: 4, margin: '1px 4px' }}
-              onClick={() => downloadWorkspaceFileFromSidebar(file.path)}>
-              <FileText size={14} style={{ color: '#10a37f', flexShrink: 0 }} />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{file.size < 1024 ? `${file.size}B` : file.size < 1048576 ? `${(file.size/1024).toFixed(1)}K` : `${(file.size/1048576).toFixed(1)}M`}</Text>
-            </div>
-          </Tooltip>
-        ))}
-      </div>
-    </div>
-  );
-
   // --- Render ---
   return (
     <ChatCtx.Provider value={{ onReload: undefined }}>
@@ -824,7 +793,6 @@ export default function ChatPage() {
           {chatSender}
           {sharedCTA}
         </div>
-        {workspaceSider}
       </div>
 
       {/* Action Modal */}

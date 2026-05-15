@@ -132,67 +132,57 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
   if (!toolCalls?.length) return null;
 
   return (
-    <div style={{ 
-      marginTop: 12, marginBottom: 12,
-      background: '#ffffff', 
-      border: `1px solid ${token.colorBorderSecondary}`, 
-      borderRadius: 16,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-      overflow: 'hidden'
-    }}>
-      <div style={{ 
-        padding: '10px 16px', 
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        display: 'flex', alignItems: 'center', gap: 8,
-        background: '#f8fafc'
-      }}>
-        <Wrench size={14} style={{ color: token.colorTextSecondary }} />
-        <span style={{ fontWeight: 600, fontSize: 13, color: token.colorTextSecondary }}>
-          Executed {toolCalls.length} tool{toolCalls.length > 1 ? 's' : ''}
-        </span>
-      </div>
+    <div style={{ marginBottom: 12 }}>
       <Collapse
         ghost
         expandIconPosition="end"
-        items={toolCalls.map((tool, idx) => {
-          const isRunning = tool.status === 'running';
-          const isError = tool.status === 'error';
-          const isDone = tool.status === 'done';
-          
-          let statusIcon;
-          if (isRunning) statusIcon = <LoadingOutlined style={{ color: token.colorPrimary }} />;
-          else if (isError) statusIcon = <CloseCircleOutlined style={{ color: token.colorError }} />;
-          else if (isDone) statusIcon = <CheckCircleOutlined style={{ color: token.colorSuccess }} />;
-          else statusIcon = <MinusCircleOutlined style={{ color: token.colorTextQuaternary }} />;
-
-          return {
-            key: String(idx),
+        items={[
+          {
+            key: '1',
             label: (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%', opacity: 0.85 }}>
-                {toolIcon(tool.name)}
-                <span style={{ fontWeight: 600, color: token.colorTextHeading, fontSize: 13 }}>{tool.name}</span>
-                <span style={{ color: token.colorTextTertiary, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
-                  {summarizeInput(tool)}
-                </span>
-                <div style={{ flex: 1 }} />
-                {statusIcon}
-              </div>
+              <span style={{ fontSize: 13, color: token.colorTextSecondary }}>
+                <Wrench size={12} style={{ marginRight: 6 }} />
+                Used {toolCalls.length} tool{toolCalls.length > 1 ? 's' : ''}
+              </span>
             ),
             children: (
-              <div style={{ paddingLeft: 16, borderLeft: `2px solid ${token.colorBorderSecondary}`, marginLeft: 8 }}>
-                <ToolDetailContent tool={tool} />
+              <div style={{ paddingLeft: 8, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {toolCalls.map((tool, idx) => {
+                  const isRunning = tool.status === 'running';
+                  const isError = tool.status === 'error';
+                  const isDone = tool.status === 'done';
+                  
+                  let statusIcon;
+                  if (isRunning) statusIcon = <LoadingOutlined style={{ color: token.colorPrimary, fontSize: 12 }} />;
+                  else if (isError) statusIcon = <CloseCircleOutlined style={{ color: token.colorError, fontSize: 12 }} />;
+                  else if (isDone) statusIcon = <CheckCircleOutlined style={{ color: token.colorSuccess, fontSize: 12 }} />;
+                  else statusIcon = <MinusCircleOutlined style={{ color: token.colorTextQuaternary, fontSize: 12 }} />;
+
+                  return (
+                    <div key={idx} style={{ paddingLeft: 12, borderLeft: `2px solid ${token.colorBorderSecondary}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, opacity: 0.85 }}>
+                        {statusIcon}
+                        <span style={{ fontWeight: 500, color: token.colorTextHeading, fontSize: 12 }}>{tool.name}</span>
+                        <span style={{ color: token.colorTextTertiary, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
+                          {summarizeInput(tool)}
+                        </span>
+                      </div>
+                      <ToolDetailContent tool={tool} />
+                    </div>
+                  );
+                })}
               </div>
-            ),
-          };
-        })}
+            )
+          }
+        ]}
       />
       <style>{`
         .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-header {
-          padding: 8px 16px;
+          padding: 4px 0 !important;
           align-items: center;
         }
         .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
-          padding: 0 16px 16px 16px;
+          padding: 8px 0 0 0 !important;
         }
       `}</style>
     </div>
