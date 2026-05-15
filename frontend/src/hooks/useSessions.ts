@@ -112,12 +112,14 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
               if (block.type === 'text') {
                 currentAssistant.content += block.text;
               } else if (block.type === 'tool_use') {
+                const tcId = block.id || generateId();
                 currentAssistant.toolCalls!.push({
-                  id: block.id || generateId(),
+                  id: tcId,
                   name: block.name,
                   input: typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
                   status: 'running'
                 });
+                currentAssistant.content += `\n\n[TOOL_CALL:${tcId}]\n\n`;
               }
             }
           } else if (role === 'tool') {

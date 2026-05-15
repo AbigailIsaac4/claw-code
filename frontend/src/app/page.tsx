@@ -89,8 +89,9 @@ const useStyle = createStyles(({ token, css }) => ({
   chat: css`
     height: 100%; flex: 1; box-sizing: border-box;
     display: flex; flex-direction: column;
-    padding-block: ${token.paddingLG}px;
+    padding-bottom: ${token.paddingLG}px;
     justify-content: space-between;
+    position: relative;
     .ant-bubble-content-updating {
       background-image: linear-gradient(90deg, ${token.colorPrimary} 0%, #7c3aed 50%, ${token.colorPrimary} 100%);
       background-size: 100% 2px;
@@ -102,6 +103,7 @@ const useStyle = createStyles(({ token, css }) => ({
     flex: 1; overflow-y: auto; overflow-x: hidden;
     display: flex; flex-direction: column; align-items: center; width: 100%;
     background: #ffffff;
+    padding-top: ${token.paddingLG}px;
   `,
   placeholder: css`
     padding: ${token.paddingLG}px; box-sizing: border-box; width: 100%;
@@ -143,21 +145,7 @@ const ThinkComponent = memo(({ content, isStreaming, status }: { content?: strin
   );
 });
 
-// ==================== Footer Actions ====================
-const MessageFooter: React.FC<{ content: string; status?: string; id?: string | number }> = ({ content, status, id }) => {
-  const ctx = useContext(ChatCtx);
-  if (status === 'updating' || status === 'loading') return null;
-
-  return (
-    <Actions
-      items={[
-        { key: 'copy', actionRender: <Actions.Copy icon={<Copy size={14}/>} text={content} /> },
-        { key: 'retry', icon: <RefreshCcw size={14} />, label: 'Retry', onItemClick: () => { if (id) ctx.onReload?.(id, {}); } },
-      ]}
-    />
-  );
-};
-
+// Removed MessageFooter
 // ==================== Status Header ====================
 const STATUS_CONFIG: Record<string, { title: string; status: string }> = {
   loading: { title: 'Generating...', status: 'loading' },
@@ -415,22 +403,36 @@ export default function ChatPage() {
       contentRender: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
         const isStreaming = info.status === 'loading';
-        const toolCalls = info.extraInfo?.toolCalls;
+        const toolCalls = info.extraInfo?.toolCalls || [];
         const hasPlanSteps = parsed.planSteps.length >= 2;
-        const hasTools = Array.isArray(toolCalls) && toolCalls.length > 0;
+        const hasPlaceholders = parsed.cleanContent.includes('[TOOL_CALL:');
         
         const handleCopy = async () => { await copyToClipboard(parsed.cleanContent) ? message.success('Copied') : message.error('Failed'); };
+        
         return (
           <MsgCtx.Provider value={{ status: info.status }}>
             <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.6, marginTop: 4, paddingBottom: 24 }}>
               <ThinkComponent content={parsed.thinkingBlock} isStreaming={isStreaming} status={info.status} />
               
               {hasPlanSteps && <PlanStepsCard steps={parsed.planSteps} isStreaming={isStreaming} />}
-              {hasTools && <ToolRenderer toolCalls={toolCalls} />}
               
-              <div className="markdown-body" style={{ color: '#334155', fontSize: '15px' }}>
-                <ReactMarkdown>{parsed.cleanContent || ''}</ReactMarkdown>
-              </div>
+              {!hasPlaceholders && toolCalls.length > 0 && <ToolRenderer toolCalls={toolCalls} />}
+              
+              {parsed.cleanContent.split(/(\[TOOL_CALL:[^\]]+\])/).map((part, i) => {
+                if (part.startsWith('[TOOL_CALL:') && part.endsWith(']')) {
+                  const id = part.slice(11, -1);
+                  const tool = toolCalls.find((t: any) => t.id === id);
+                  if (tool) return <ToolRenderer key={i} toolCalls={[tool]} />;
+                  return null;
+                }
+                if (!part.trim()) return null;
+                return (
+                  <div key={i} className="markdown-body" style={{ color: '#334155', fontSize: '15px', marginBottom: 8 }}>
+                    <ReactMarkdown>{part}</ReactMarkdown>
+                  </div>
+                );
+              })}
+              
               <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', bottom: 0, left: 0, opacity: 0 }} />
             </div>
           </MsgCtx.Provider>
@@ -439,10 +441,10 @@ export default function ChatPage() {
       footer: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
         const hasFiles = parsed.workspaceFiles.length > 0;
+        if (!hasFiles) return null;
         return (
           <div>
-            {hasFiles && <WorkspaceFiles files={parsed.workspaceFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />}
-            <MessageFooter content={parsed.cleanContent} status={info.status} id={info.key} />
+            <WorkspaceFiles files={parsed.workspaceFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />
           </div>
         );
       },

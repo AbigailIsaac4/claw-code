@@ -211,14 +211,16 @@ export function useChatStream({
                   const nextMsgs = withAssistantTail(s.messages);
                   const lastMsg = nextMsgs[nextMsgs.length - 1];
                   const inputStr = typeof data.input === 'string' ? data.input : JSON.stringify(data.input);
+                  const newToolCallId = generateId();
                   const newToolCall: ToolCall = {
-                    id: generateId(),
+                    id: newToolCallId,
                     name: data.tool,
                     input: inputStr,
                     status: 'running'
                   };
                   nextMsgs[nextMsgs.length - 1] = {
                     ...lastMsg,
+                    content: lastMsg.content + `\n\n[TOOL_CALL:${newToolCallId}]\n\n`,
                     toolCalls: [...(lastMsg.toolCalls || []), newToolCall]
                   };
                   return { ...s, messages: nextMsgs };
