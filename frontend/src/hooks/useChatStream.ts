@@ -72,6 +72,7 @@ export function useChatStream({
   const [activeToolSummary, setActiveToolSummary] = useState<string | null>(null);
   const [currentIteration, setCurrentIteration] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isReceivingReasoningRef = useRef<boolean>(false);
 
   const stopMessage = useCallback(() => {
     if (abortControllerRef.current) {
@@ -107,6 +108,7 @@ export function useChatStream({
 
     const ctrl = new AbortController();
     abortControllerRef.current = ctrl;
+    isReceivingReasoningRef.current = false;
     let streamCompleted = false;
 
     const isNewChat = activeSession.title === 'New Chat' && activeSession.messages.length === 0;
@@ -180,12 +182,35 @@ export function useChatStream({
             try {
               const data = JSON.parse(ev.data);
               const chunkText = data.choices?.[0]?.delta?.content || '';
+              const reasoningText = data.choices?.[0]?.delta?.reasoning_content || '';
+              
+              if (!chunkText && !reasoningText) return;
+
               setSessions(prev => prev.map(s => {
                 if (s.id === sessionId) {
                   const nextMsgs = withAssistantTail(s.messages);
+                  const lastMsg = nextMsgs[nextMsgs.length - 1];
+                  let newContent = lastMsg.content || '';
+
+                  if (reasoningText) {
+                    if (!isReceivingReasoningRef.current) {
+                      isReceivingReasoningRef.current = true;
+                      newContent += '<thinking>\n';
+                    }
+                    newContent += reasoningText;
+                  }
+
+                  if (chunkText) {
+                    if (isReceivingReasoningRef.current) {
+                      isReceivingReasoningRef.current = false;
+                      newContent += '\n</thinking>\n\n';
+                    }
+                    newContent += chunkText;
+                  }
+
                   nextMsgs[nextMsgs.length - 1] = {
-                    ...nextMsgs[nextMsgs.length - 1],
-                    content: nextMsgs[nextMsgs.length - 1].content + chunkText
+                    ...lastMsg,
+                    content: newContent
                   };
                   return { ...s, messages: nextMsgs };
                 }

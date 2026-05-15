@@ -72,7 +72,7 @@ const FilePreviewer: React.FC<{ file: string; sessionId?: string; onDownload: ()
 
   useEffect(() => {
     if (!fileUrl) return;
-    if (['md', 'txt', 'json', 'js', 'ts', 'py', 'sh', 'rs', 'html', 'css'].includes(ext)) {
+    if (['md', 'txt', 'csv', 'json', 'js', 'ts', 'py', 'sh', 'rs', 'html', 'css'].includes(ext)) {
       setLoading(true);
       fetch(fileUrl, { headers: { 'Authorization': `Bearer ${localStorage.getItem('claw_token')}` } })
         .then(res => res.text())
@@ -121,7 +121,7 @@ const FilePreviewer: React.FC<{ file: string; sessionId?: string; onDownload: ()
     );
   }
 
-  if (['md', 'txt', 'json', 'js', 'ts', 'py', 'sh', 'rs', 'html', 'css'].includes(ext)) {
+  if (['md', 'txt', 'csv', 'json', 'js', 'ts', 'py', 'sh', 'rs', 'html', 'css'].includes(ext)) {
     return (
       <div className="markdown-body" style={{ padding: '24px 32px', height: '80vh', overflowY: 'auto' }}>
         {ext === 'md' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || ''}</ReactMarkdown> : <pre><code>{content}</code></pre>}

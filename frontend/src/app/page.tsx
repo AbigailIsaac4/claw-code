@@ -706,6 +706,7 @@ export default function ChatPage() {
             placeholder="Ask me anything... Type / to select a skill"
             style={{ border: 'none', boxShadow: 'none', background: 'transparent', padding: 0 }}
             styles={{ input: { fontSize: 15 } }}
+            suffix={false}
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -757,15 +758,26 @@ export default function ChatPage() {
                 </Tooltip>
               </Popover>
             </div>
-            <Button
-              type="primary"
-              shape="circle"
-              icon={<ArrowUpOutlined />}
-              disabled={!input.trim() && uploadedFiles.length === 0}
-              onClick={() => { if (input.trim() || uploadedFiles.length > 0) sendMessage(input); }}
-              style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              className="custom-send-btn"
-            />
+            {loading ? (
+              <Button
+                type="default"
+                shape="circle"
+                onClick={stopMessage}
+                style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderColor: '#1677ff' }}
+                className="custom-send-btn"
+                icon={<div style={{ width: 10, height: 10, background: '#1677ff', borderRadius: 2 }} />}
+              />
+            ) : (
+              <Button
+                type="primary"
+                shape="circle"
+                icon={<ArrowUpOutlined />}
+                disabled={!input.trim() && uploadedFiles.length === 0}
+                onClick={() => { if (input.trim() || uploadedFiles.length > 0) sendMessage(input); }}
+                style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                className="custom-send-btn"
+              />
+            )}
           </div>
         </div>
       </div>
