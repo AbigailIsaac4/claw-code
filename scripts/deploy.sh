@@ -25,11 +25,26 @@ echo "[0/5] 准备目录结构..."
 mkdir -p "${DEPLOY_DIR}/rust/data/workspaces"
 mkdir -p "${DEPLOY_DIR}/logs"
 
+# 解析参数
+SKIP_DB_BACKUP=false
+if [[ "${1:-}" == "--skip-backup" ]]; then
+    SKIP_DB_BACKUP=true
+fi
+
 # 备份数据库（如果存在）
 DB_FILE="${DEPLOY_DIR}/rust/claw_agent.db"
 if [ -f "$DB_FILE" ]; then
-    cp "$DB_FILE" "${DB_FILE}.bak.$(date +%Y%m%d%H%M%S)"
-    echo "  -> 已备份数据库"
+    if [ "$SKIP_DB_BACKUP" = true ]; then
+        echo "  -> 收到 --skip-backup 参数，跳过数据库备份"
+    else
+        cp "$DB_FILE" "${DB_FILE}.bak.$(date +%Y%m%d%H%M%S)"
+        echo "  -> 已备份数据库"
+        
+        # 仅保留最近的 5 份备份，删除其余旧备份
+        # 使用 ls -t 降序排列，tail -n +6 获取从第6个开始的列表，然后删除
+        ls -t "${DB_FILE}.bak."* 2>/dev/null | tail -n +6 | xargs -r rm -f
+        echo "  -> 已清理旧备份，仅保留最近 5 份"
+    fi
 fi
 
 # ──────────────── Step 1: 编译 Rust 后端 ────────────────

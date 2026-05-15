@@ -132,7 +132,25 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
   if (!toolCalls?.length) return null;
 
   return (
-    <div style={{ marginTop: 12, marginBottom: 12 }}>
+    <div style={{ 
+      marginTop: 12, marginBottom: 12,
+      background: '#ffffff', 
+      border: `1px solid ${token.colorBorderSecondary}`, 
+      borderRadius: 16,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+      overflow: 'hidden'
+    }}>
+      <div style={{ 
+        padding: '10px 16px', 
+        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: '#f8fafc'
+      }}>
+        <Wrench size={14} style={{ color: token.colorTextSecondary }} />
+        <span style={{ fontWeight: 600, fontSize: 13, color: token.colorTextSecondary }}>
+          Executed {toolCalls.length} tool{toolCalls.length > 1 ? 's' : ''}
+        </span>
+      </div>
       <Collapse
         ghost
         expandIconPosition="end"
@@ -152,8 +170,8 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
             label: (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%', opacity: 0.85 }}>
                 {toolIcon(tool.name)}
-                <span style={{ fontWeight: 600, color: token.colorTextHeading, fontSize: 14 }}>{tool.name}</span>
-                <span style={{ color: token.colorTextTertiary, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
+                <span style={{ fontWeight: 600, color: token.colorTextHeading, fontSize: 13 }}>{tool.name}</span>
+                <span style={{ color: token.colorTextTertiary, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
                   {summarizeInput(tool)}
                 </span>
                 <div style={{ flex: 1 }} />
@@ -170,11 +188,11 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
       />
       <style>{`
         .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-header {
-          padding: 8px 0;
+          padding: 8px 16px;
           align-items: center;
         }
         .ant-collapse-ghost > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
-          padding: 0 0 16px 0;
+          padding: 0 16px 16px 16px;
         }
       `}</style>
     </div>

@@ -10,10 +10,11 @@ import {
   RefreshCw, Globe, RefreshCcw, LayoutGrid,
   ChevronRight, Sparkles
 } from 'lucide-react';
+import { ArrowUpOutlined } from '@ant-design/icons';
 import { createStyles } from 'antd-style';
 import { parseMessageContent } from '@/utils/messageParser';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
-import { WorkspaceFiles } from '@/components/chat/WorkspaceFiles';
+import { WorkspaceFiles, getFileIcon } from '@/components/chat/WorkspaceFiles';
 import { ToolRenderer } from '@/components/chat/ToolRenderer';
 import { useAuth } from '@/hooks/useAuth';
 import { useSessions } from '@/hooks/useSessions';
@@ -106,10 +107,13 @@ const useStyle = createStyles(({ token, css }) => ({
   `,
   sender: css`
     width: 100%; max-width: 768px; margin: 0 auto;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.06);
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(16px);
+    border: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    & .ant-btn-primary { display: none; }
   `,
 }));
 
@@ -391,12 +395,20 @@ export default function ChatPage() {
       contentRender: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
         const isStreaming = info.status === 'loading';
+        const toolCalls = info.extraInfo?.toolCalls;
+        const hasPlanSteps = parsed.planSteps.length >= 2;
+        const hasTools = Array.isArray(toolCalls) && toolCalls.length > 0;
+        
         const handleCopy = async () => { await copyToClipboard(parsed.cleanContent) ? message.success('Copied') : message.error('Failed'); };
         return (
           <MsgCtx.Provider value={{ status: info.status }}>
             <div className="msg-hover-copy" style={{ position: 'relative', lineHeight: 1.75 }}>
               <ThinkComponent content={parsed.thinkingBlock} isStreaming={isStreaming} status={info.status} />
-              <div style={{ paddingRight: 28, color: '#334155', fontSize: '15px' }}>
+              
+              {hasPlanSteps && <PlanStepsCard steps={parsed.planSteps} isStreaming={isStreaming} />}
+              {hasTools && <ToolRenderer toolCalls={toolCalls} />}
+              
+              <div className="markdown-body" style={{ paddingRight: 28, color: '#334155', fontSize: '15px' }}>
                 <ReactMarkdown>{parsed.cleanContent || ''}</ReactMarkdown>
               </div>
               <Button type="text" size="small" icon={<Copy size={14} />} onClick={handleCopy} className="copy-btn" style={{ position: 'absolute', top: 0, right: 0, opacity: 0 }} />
@@ -405,16 +417,11 @@ export default function ChatPage() {
         );
       },
       footer: (content: string, info) => {
-        const toolCalls = info.extraInfo?.toolCalls;
         const parsed = parseMessageContent(content || '');
-        const hasPlanSteps = parsed.planSteps.length >= 2;
         const hasFiles = parsed.workspaceFiles.length > 0;
-        const hasTools = Array.isArray(toolCalls) && toolCalls.length > 0;
         return (
           <div>
-            {hasPlanSteps && <PlanStepsCard steps={parsed.planSteps} onExecuteStep={(fb) => setInput(`Please execute:\n\n${fb}`)} />}
             {hasFiles && <WorkspaceFiles files={parsed.workspaceFiles} onDownload={downloadWorkspaceFile} />}
-            {hasTools && <ToolRenderer toolCalls={toolCalls} />}
             <MessageFooter content={parsed.cleanContent} status={info.status} id={info.key} />
           </div>
         );
@@ -481,28 +488,6 @@ export default function ChatPage() {
           styles={{ root: { maxWidth: 860, width: '100%', padding: '0 24px' } }}
           role={bubbleRole}
         />
-        {/* Inline question indicator in chat stream */}
-        {questionReq && (
-          <div style={{
-            maxWidth: 860, width: '100%', padding: '12px 24px', margin: '0 auto',
-          }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '12px 18px', borderRadius: 12,
-              background: 'linear-gradient(135deg, #f0fdf8 0%, #ecfdf5 100%)',
-              border: '1px solid #a7f3d0',
-            }}>
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%', background: '#10a37f', flexShrink: 0,
-                animation: 'pulse 1.5s ease-in-out infinite',
-              }} />
-              <span style={{ fontSize: 13, color: '#065f46', fontWeight: 500 }}>
-                Agent 正在等待您的回答，请在弹窗中回复…
-              </span>
-              <style>{`@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }`}</style>
-            </div>
-          </div>
-        )}
         </>
       ) : (
         <Flex vertical style={{ maxWidth: 840, flex: 1, justifyContent: 'center' }} gap={16} align="center" className={styles.placeholder}>
@@ -667,77 +652,95 @@ export default function ChatPage() {
           </div>
         )}
 
-        <Sender
-          value={input}
-          onChange={handleInputChange}
-          onSubmit={(val) => { if (val.trim()) sendMessage(val); }}
-          onCancel={() => {}}
-          loading={loading}
-          className={styles.sender}
-        placeholder="Ask me anything... Type / to select a skill"
-        header={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className={styles.sender}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: uploadedFiles.length > 0 ? 8 : 0 }}>
             {uploadedFiles.length > 0 && (
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                {uploadedFiles.map(f => (
-                  <Tag key={f} closable onClose={() => setUploadedFiles(prev => prev.filter(x => x !== f))}
-                    icon={<Paperclip size={12} />} style={{ margin: 0, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {f.split('/').pop()}
-                  </Tag>
-                ))}
+                {uploadedFiles.map(f => {
+                  const filename = f.split('/').pop() || f;
+                  return (
+                    <Tag key={f} closable onClose={() => setUploadedFiles(prev => prev.filter(x => x !== f))}
+                      icon={<span style={{ marginRight: 4 }}>{getFileIcon(filename)}</span>} style={{ margin: 0, fontSize: 12, display: 'flex', alignItems: 'center' }}>
+                      {filename}
+                    </Tag>
+                  );
+                })}
               </div>
             )}
           </div>
-        }
-        prefix={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Tooltip title="Upload file">
-              <Paperclip
-                size={18}
-                style={{ cursor: 'pointer', color: token.colorTextQuaternary }}
-                onClick={() => document.getElementById('file-upload-input')?.click()}
-              />
-            </Tooltip>
-            <Popover
-              content={
-                <div style={{ maxHeight: 320, overflowY: 'auto', width: 280 }}>
-                  {skills.length === 0 ? (
-                    <div style={{ padding: 12, textAlign: 'center' }}><Text type="secondary" style={{ fontSize: 13 }}>No skills available</Text></div>
-                  ) : skills.map(skill => {
-                    const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
-                    return (
-                      <div key={skill.name} onClick={() => {
-                        setInput(prev => prev + (prev.trim() && !prev.endsWith(' ') ? ' ' : '') + `/${sn} `);
-                      }}
-                        style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: token.borderRadius, marginBottom: 4 }}
-                        onMouseEnter={e => { e.currentTarget.style.background = token.colorFillTertiary; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                      >
-                        <div style={{ fontWeight: 500, color: token.colorPrimary, marginBottom: 4, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Bot size={14} /> {skill.name}
-                        </div>
-                        <div style={{ fontSize: 12, color: token.colorTextSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {skill.description}
-                        </div>
-                      </div>
-                    );
-                  })}
+          <Sender
+            value={input}
+            onChange={handleInputChange}
+            onSubmit={(val) => { if (val.trim()) sendMessage(val); }}
+            onCancel={() => {}}
+            loading={loading}
+            placeholder="Ask me anything... Type / to select a skill"
+            style={{ border: 'none', boxShadow: 'none', background: 'transparent', padding: 0 }}
+            styles={{ input: { fontSize: 15 } }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Tooltip title="Upload file">
+                <div onClick={() => document.getElementById('file-upload-input')?.click()}
+                  style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b', transition: 'all 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#e2e8f0'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#f1f5f9'}
+                >
+                  <Paperclip size={16} />
                 </div>
-              }
-              trigger="click"
-              placement="topLeft"
-            >
-              <Tooltip title="Select skill">
-                <LayoutGrid
-                  size={18}
-                  style={{ cursor: 'pointer', color: token.colorTextQuaternary }}
-                />
               </Tooltip>
-            </Popover>
+              <Popover
+                content={
+                  <div style={{ maxHeight: 320, overflowY: 'auto', width: 280 }}>
+                    {skills.length === 0 ? (
+                      <div style={{ padding: 12, textAlign: 'center' }}><Text type="secondary" style={{ fontSize: 13 }}>No skills available</Text></div>
+                    ) : skills.map(skill => {
+                      const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
+                      return (
+                        <div key={skill.name} onClick={() => {
+                          setInput(prev => prev + (prev.trim() && !prev.endsWith(' ') ? ' ' : '') + `/${sn} `);
+                        }}
+                          style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: token.borderRadius, marginBottom: 4 }}
+                          onMouseEnter={e => { e.currentTarget.style.background = token.colorFillTertiary; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          <div style={{ fontWeight: 500, color: token.colorPrimary, marginBottom: 4, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Bot size={14} /> {skill.name}
+                          </div>
+                          <div style={{ fontSize: 12, color: token.colorTextSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {skill.description}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                }
+                trigger="click"
+                placement="topLeft"
+              >
+                <Tooltip title="Select skill">
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b', transition: 'all 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#e2e8f0'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#f1f5f9'}
+                  >
+                    <LayoutGrid size={16} />
+                  </div>
+                </Tooltip>
+              </Popover>
+            </div>
+            <Button
+              type="primary"
+              shape="circle"
+              icon={<ArrowUpOutlined />}
+              disabled={!input.trim() && uploadedFiles.length === 0}
+              onClick={() => { if (input.trim() || uploadedFiles.length > 0) sendMessage(input); }}
+              style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              className="custom-send-btn"
+            />
           </div>
-        }
-      />
+        </div>
       </div>
+      <style>{`.custom-send-btn { display: flex !important; }`}</style>
       <input type="file" id="file-upload-input" style={{ display: 'none' }} onChange={handleFileUpload} />
     </div>
   );
