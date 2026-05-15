@@ -23,6 +23,8 @@ import { useChatStream } from '@/hooks/useChatStream';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 const { Text } = Typography;
 const { useToken } = theme;
@@ -430,7 +432,7 @@ export default function ChatPage() {
                 if (!part.trim()) return null;
                 return (
                   <div key={i} className="markdown-body" style={{ color: '#334155', fontSize: '15px', marginBottom: 8 }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{part}</ReactMarkdown>
                   </div>
                 );
               })}
@@ -443,7 +445,7 @@ export default function ChatPage() {
       footer: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
         // Filter out hallucinated or missing files by checking the current real workspace files
-        const validFiles = parsed.workspaceFiles.filter(pf => 
+        const validFiles = isSharedView ? parsed.workspaceFiles : parsed.workspaceFiles.filter(pf => 
           workspaceFiles.some(wf => wf.name === pf.split('/').pop() || wf.path === pf || wf.path.endsWith('/' + pf))
         );
         if (validFiles.length === 0) return null;
@@ -829,16 +831,24 @@ export default function ChatPage() {
         {sider}
         <div className={styles.chat}>
           <div style={{ position: 'absolute', top: 16, right: 24, display: 'flex', gap: 12, zIndex: 10 }}>
-            <Button type="text" icon={<ShareAltOutlined />} style={{ color: '#64748b' }} onClick={() => {
-              const url = `${window.location.origin}${window.location.pathname}?share=true&session=${activeSessionId}`;
-              copyToClipboard(url).then((success) => {
-                if (success) message.success('分享链接已复制');
-                else message.error('复制失败，请手动复制链接');
-              });
-            }}>分享</Button>
-            <Dropdown menu={menuProps} placement="bottomRight" trigger={['click']}>
-              <Button type="text" icon={<MoreHorizontal size={18} />} style={{ color: '#64748b' }} />
-            </Dropdown>
+            {isSharedView ? (
+              <div style={{ padding: '4px 12px', background: '#f1f5f9', borderRadius: 16, color: '#64748b', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                <Sparkles size={14} style={{ color: token.colorPrimary }} /> 分享预览
+              </div>
+            ) : (
+              <>
+                <Button type="text" icon={<ShareAltOutlined />} style={{ color: '#64748b' }} onClick={() => {
+                  const url = `${window.location.origin}${window.location.pathname}?share=true&session=${activeSessionId}`;
+                  copyToClipboard(url).then((success) => {
+                    if (success) message.success('分享链接已复制');
+                    else message.error('复制失败，请手动复制链接');
+                  });
+                }}>分享</Button>
+                <Dropdown menu={menuProps} placement="bottomRight" trigger={['click']}>
+                  <Button type="text" icon={<MoreHorizontal size={18} />} style={{ color: '#64748b' }} />
+                </Dropdown>
+              </>
+            )}
           </div>
           {chatList}
           {chatSender}

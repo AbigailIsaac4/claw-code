@@ -12,6 +12,8 @@ import {
 import { Button, Typography, theme, Modal, Spin } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
@@ -66,7 +68,7 @@ export const getFileIcon = (filename: string, style?: React.CSSProperties) => {
 
 const FilePreviewer: React.FC<{ file: string; sessionId?: string; onDownload: () => void }> = ({ file, sessionId, onDownload }) => {
   const ext = file.split('.').pop()?.toLowerCase() || '';
-  const fileUrl = sessionId ? apiUrl(`/v1/sandbox/workspace/file?path=${encodeURIComponent(file)}&session_id=${sessionId}`) : '';
+  const fileUrl = sessionId ? apiUrl(`/v1/sandbox/download?path=${encodeURIComponent(file)}&session_id=${encodeURIComponent(sessionId)}`) : '';
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -122,9 +124,16 @@ const FilePreviewer: React.FC<{ file: string; sessionId?: string; onDownload: ()
   }
 
   if (['md', 'txt', 'csv', 'json', 'js', 'ts', 'py', 'sh', 'rs', 'html', 'css'].includes(ext)) {
+    if (ext === 'html') {
+      return (
+        <div style={{ width: '100%', height: '80vh', overflow: 'hidden' }}>
+          <iframe srcDoc={content || ''} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} sandbox="allow-scripts allow-same-origin" title="HTML Preview" />
+        </div>
+      );
+    }
     return (
       <div className="markdown-body" style={{ padding: '24px 32px', height: '80vh', overflowY: 'auto' }}>
-        {ext === 'md' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || ''}</ReactMarkdown> : <pre><code>{content}</code></pre>}
+        {ext === 'md' ? <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content || ''}</ReactMarkdown> : <pre><code>{content}</code></pre>}
       </div>
     );
   }

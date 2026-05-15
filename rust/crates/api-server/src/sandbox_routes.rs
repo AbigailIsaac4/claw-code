@@ -116,8 +116,37 @@ pub async fn download_file(
         || workspace_path.relative_path.ends_with(".jpeg")
     {
         "image/jpeg"
+    } else if workspace_path.relative_path.ends_with(".gif") {
+        "image/gif"
+    } else if workspace_path.relative_path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if workspace_path.relative_path.ends_with(".webp") {
+        "image/webp"
     } else if workspace_path.relative_path.ends_with(".pdf") {
         "application/pdf"
+    } else if workspace_path.relative_path.ends_with(".html")
+        || workspace_path.relative_path.ends_with(".htm")
+    {
+        "text/html; charset=utf-8"
+    } else if workspace_path.relative_path.ends_with(".css") {
+        "text/css; charset=utf-8"
+    } else if workspace_path.relative_path.ends_with(".js") {
+        "text/javascript; charset=utf-8"
+    } else if workspace_path.relative_path.ends_with(".json") {
+        "application/json; charset=utf-8"
+    } else if workspace_path.relative_path.ends_with(".csv") {
+        "text/csv; charset=utf-8"
+    } else if workspace_path.relative_path.ends_with(".md")
+        || workspace_path.relative_path.ends_with(".txt")
+        || workspace_path.relative_path.ends_with(".py")
+        || workspace_path.relative_path.ends_with(".sh")
+        || workspace_path.relative_path.ends_with(".rs")
+        || workspace_path.relative_path.ends_with(".ts")
+        || workspace_path.relative_path.ends_with(".xml")
+        || workspace_path.relative_path.ends_with(".yaml")
+        || workspace_path.relative_path.ends_with(".yml")
+    {
+        "text/plain; charset=utf-8"
     } else {
         "application/octet-stream"
     };
@@ -128,13 +157,21 @@ pub async fn download_file(
         .next()
         .unwrap_or("download");
 
+    // Use inline disposition for previewable types, attachment for binary downloads
+    let disposition = if content_type.starts_with("text/")
+        || content_type.starts_with("image/")
+        || content_type.starts_with("application/pdf")
+        || content_type.starts_with("application/json")
+    {
+        format!("inline; filename=\"{}\"", filename)
+    } else {
+        format!("attachment; filename=\"{}\"", filename)
+    };
+
     use axum::http::header;
     let headers = [
         (header::CONTENT_TYPE, content_type.to_string()),
-        (
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", filename),
-        ),
+        (header::CONTENT_DISPOSITION, disposition),
     ];
 
     Ok((headers, decoded))
