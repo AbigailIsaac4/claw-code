@@ -22,6 +22,7 @@ import { useSessions } from '@/hooks/useSessions';
 import { useChatStream } from '@/hooks/useChatStream';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const { Text } = Typography;
 const { useToken } = theme;
@@ -429,7 +430,7 @@ export default function ChatPage() {
                 if (!part.trim()) return null;
                 return (
                   <div key={i} className="markdown-body" style={{ color: '#334155', fontSize: '15px', marginBottom: 8 }}>
-                    <ReactMarkdown>{part}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{part}</ReactMarkdown>
                   </div>
                 );
               })}
@@ -441,11 +442,14 @@ export default function ChatPage() {
       },
       footer: (content: string, info) => {
         const parsed = parseMessageContent(content || '');
-        const hasFiles = parsed.workspaceFiles.length > 0;
-        if (!hasFiles) return null;
+        // Filter out hallucinated or missing files by checking the current real workspace files
+        const validFiles = parsed.workspaceFiles.filter(pf => 
+          workspaceFiles.some(wf => wf.name === pf.split('/').pop() || wf.path === pf || wf.path.endsWith('/' + pf))
+        );
+        if (validFiles.length === 0) return null;
         return (
           <div>
-            <WorkspaceFiles files={parsed.workspaceFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />
+            <WorkspaceFiles files={validFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />
           </div>
         );
       },

@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Typography, theme, Modal, Spin } from 'antd';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 const apiUrl = (path: string) => `${API_BASE_URL}${path}`;
 
@@ -123,7 +124,7 @@ const FilePreviewer: React.FC<{ file: string; sessionId?: string; onDownload: ()
   if (['md', 'txt', 'json', 'js', 'ts', 'py', 'sh', 'rs', 'html', 'css'].includes(ext)) {
     return (
       <div className="markdown-body" style={{ padding: '24px 32px', height: '80vh', overflowY: 'auto' }}>
-        {ext === 'md' ? <ReactMarkdown>{content || ''}</ReactMarkdown> : <pre><code>{content}</code></pre>}
+        {ext === 'md' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || ''}</ReactMarkdown> : <pre><code>{content}</code></pre>}
       </div>
     );
   }
