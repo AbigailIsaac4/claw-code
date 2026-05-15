@@ -47,7 +47,18 @@ function normalizeWorkspaceFile(candidate: string): string | null {
   }
 
   const lastPart = parts.at(-1) ?? '';
-  if (!lastPart.includes('.')) {
+  const RESULT_EXTENSIONS = new Set([
+    'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv', 'tsv',
+    'md', 'txt', 'rtf', 'odt', 'ods', 'odp',
+    'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff',
+    'json', 'xml', 'yaml', 'yml',
+    'zip', 'tar', 'gz', 'rar', '7z',
+    'html', 'htm', 'css',
+    'mp3', 'mp4', 'wav', 'avi', 'mov',
+  ]);
+
+  const ext = lastPart.split('.').pop()?.toLowerCase() || '';
+  if (!RESULT_EXTENSIONS.has(ext)) {
     return null;
   }
 

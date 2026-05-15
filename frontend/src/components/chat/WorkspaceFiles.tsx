@@ -23,6 +23,21 @@ interface Props {
   sessionId?: string;
 }
 
+export const getFileStyle = (filename: string): { color: string; bg: string; type: string } => {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'pdf': return { color: '#fff', bg: '#ef4444', type: 'PDF' };
+    case 'doc': case 'docx': return { color: '#fff', bg: '#2563eb', type: 'Word' };
+    case 'xls': case 'xlsx': case 'csv': return { color: '#fff', bg: '#16a34a', type: 'Excel' };
+    case 'zip': case 'rar': case 'tar': case 'gz': return { color: '#fff', bg: '#8b5cf6', type: 'Archive' };
+    case 'jpg': case 'jpeg': case 'png': case 'gif': case 'svg': return { color: '#fff', bg: '#f59e0b', type: 'Image' };
+    case 'md': return { color: '#fff', bg: '#3b82f6', type: 'Markdown' };
+    case 'json': return { color: '#fff', bg: '#f59e0b', type: 'JSON' };
+    case 'txt': return { color: '#fff', bg: '#64748b', type: 'Text' };
+    default: return { color: '#fff', bg: '#94a3b8', type: 'File' };
+  }
+};
+
 export const getFileIcon = (filename: string, style?: React.CSSProperties) => {
   const ext = filename.split('.').pop()?.toLowerCase();
   switch (ext) {
@@ -136,17 +151,15 @@ export const WorkspaceFiles: React.FC<Props> = ({ files, onDownload, sessionId }
       <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>结果文件</Text>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-          {uniqueFiles.map((file) => {
+          {uniqueFiles.map((file, idx) => {
             const filename = file.split('/').pop() || file;
-            const ext = filename.split('.').pop()?.toUpperCase() || 'FILE';
+            const fileStyle = getFileStyle(filename);
             return (
               <div 
-                key={file} 
+                key={idx} 
                 onClick={() => setPreviewFile(file)}
                 style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 12, 
+                  display: 'flex', alignItems: 'center', gap: 12, 
                   padding: '12px 16px', 
                   border: `1px solid ${token.colorBorderSecondary}`, 
                   borderRadius: 12, 
@@ -168,16 +181,16 @@ export const WorkspaceFiles: React.FC<Props> = ({ files, onDownload, sessionId }
                 }}
               >
                 <div style={{ 
-                  width: 40, height: 40, borderRadius: 8, background: token.colorFillQuaternary, 
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 
+                  width: 36, height: 36, borderRadius: 8, background: fileStyle.bg, 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 
                 }}>
-                  {getFileIcon(filename)}
+                  {getFileIcon(filename, { color: fileStyle.color })}
                 </div>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Text strong style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Text strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {filename}
                   </Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{ext} Document</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{fileStyle.type} Document</Text>
                 </div>
                 <Button 
                   type="text" 

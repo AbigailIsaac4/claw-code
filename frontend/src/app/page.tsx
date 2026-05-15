@@ -206,6 +206,7 @@ export default function ChatPage() {
     activeToolName,
     activeToolSummary,
     currentIteration,
+    stopMessage,
   } = useChatStream({
     token: authToken, sessions, activeSessionId, activeSession,
     setSessions, setActiveSessionId,
@@ -696,7 +697,7 @@ export default function ChatPage() {
             value={input}
             onChange={handleInputChange}
             onSubmit={(val) => { if (val.trim()) sendMessage(val); }}
-            onCancel={() => {}}
+            onCancel={stopMessage}
             loading={loading}
             placeholder="Ask me anything... Type / to select a skill"
             style={{ border: 'none', boxShadow: 'none', background: 'transparent', padding: 0 }}

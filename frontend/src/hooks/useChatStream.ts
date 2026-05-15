@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
 import type { HydratedMessage, HydratedToolCall } from '@/utils/sessionHydration';
 import { normalizeHydratedMessages } from '@/utils/sessionHydration';
@@ -71,6 +71,19 @@ export function useChatStream({
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
   const [activeToolSummary, setActiveToolSummary] = useState<string | null>(null);
   const [currentIteration, setCurrentIteration] = useState<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const stopMessage = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+    loadingRef.current = false;
+    streamingSessionRef.current = null;
+    setActiveToolName(null);
+    setActiveToolSummary(null);
+  }, [setLoading, loadingRef, streamingSessionRef]);
 
   const setConversationLoading = useCallback((value: boolean) => {
     loadingRef.current = value;
@@ -93,6 +106,7 @@ export function useChatStream({
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
 
     const ctrl = new AbortController();
+    abortControllerRef.current = ctrl;
     let streamCompleted = false;
 
     const isNewChat = activeSession.title === 'New Chat' && activeSession.messages.length === 0;
@@ -324,6 +338,7 @@ export function useChatStream({
     activeToolName,
     activeToolSummary,
     currentIteration,
+    stopMessage,
     sendMessage,
   };
 }
