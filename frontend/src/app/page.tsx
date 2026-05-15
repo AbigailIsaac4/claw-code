@@ -61,11 +61,11 @@ interface ActionRequest { action_id: string; tool?: string; required_mode?: stri
 const useStyle = createStyles(({ token, css }) => ({
   layout: css`
     width: 100%; height: 100vh; display: flex;
-    background: #f8fafc;
+    background: #ffffff; overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   `,
   sider: css`
-    background: #f8fafc;
+    background: #f5f5f5;
     width: 260px; height: 100%;
     display: flex; flex-direction: column;
     padding: 0 12px; box-sizing: border-box;
@@ -99,9 +99,9 @@ const useStyle = createStyles(({ token, css }) => ({
     }
   `,
   chatList: css`
-    flex: 1; overflow-y: auto;
+    flex: 1; overflow-y: auto; overflow-x: hidden;
     display: flex; flex-direction: column; align-items: center; width: 100%;
-    background: #f8fafc;
+    background: #ffffff;
   `,
   placeholder: css`
     padding: ${token.paddingLG}px; box-sizing: border-box; width: 100%;
@@ -453,8 +453,8 @@ export default function ChatPage() {
   const sider = !isSharedView && (
     <div className={styles.sider}>
       <div className={styles.logo}>
-        <Avatar shape="square" size={30} style={{ background: '#10a37f', borderRadius: 8 }} icon={<Sparkles size={16} color="#fff" />} />
-        <span style={{ color: '#1e293b' }}>Claw Agent</span>
+        <Avatar shape="square" size={30} style={{ background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', borderRadius: 8, boxShadow: '0 2px 6px rgba(16, 163, 127, 0.2)' }} icon={<Sparkles size={16} color="#fff" />} />
+        <span style={{ color: '#0f172a', fontSize: 16, fontWeight: 700, letterSpacing: '-0.3px' }}>Claw Agent</span>
       </div>
       <Conversations
         creation={{ onClick: createNewSession, label: 'New Chat' }}
@@ -474,9 +474,11 @@ export default function ChatPage() {
         })}
       />
       <div className={styles.sideFooter}>
-        <Avatar size={24} style={{ background: '#334155' }} icon={<CircleUser size={14} color="#fff" />} />
+        <Avatar size={28} style={{ background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', color: '#fff', fontSize: 13, fontWeight: 600 }}>
+          {fullName ? fullName.charAt(0).toUpperCase() : <CircleUser size={16} color="#fff" />}
+        </Avatar>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Text strong style={{ fontSize: 12, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#1e293b' }}>{fullName}</Text>
+          <Text strong style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#1e293b' }}>{fullName || 'User'}</Text>
         </div>
         <Tooltip title="Sign out">
           <Button type="text" size="small" onClick={handleLogout} icon={<CircleUser size={16} />} style={{ color: token.colorTextQuaternary }} />
@@ -810,7 +812,10 @@ export default function ChatPage() {
           <div style={{ position: 'absolute', top: 16, right: 24, display: 'flex', gap: 12, zIndex: 10 }}>
             <Button type="text" icon={<ShareAltOutlined />} style={{ color: '#64748b' }} onClick={() => {
               const url = `${window.location.origin}${window.location.pathname}?share=true&session=${activeSessionId}`;
-              navigator.clipboard.writeText(url).then(() => message.success('分享链接已复制'));
+              copyToClipboard(url).then((success) => {
+                if (success) message.success('分享链接已复制');
+                else message.error('复制失败，请手动复制链接');
+              });
             }}>分享</Button>
             <Dropdown menu={menuProps} placement="bottomRight" trigger={['click']}>
               <Button type="text" icon={<MoreHorizontal size={18} />} style={{ color: '#64748b' }} />

@@ -148,7 +148,7 @@ export const ToolRenderer: React.FC<Props> = ({ toolCalls }) => {
           <Collapse
             key={idx}
             ghost
-            expandIconPosition="end"
+            expandIcon={() => null}
             style={{ marginBottom: 12 }}
             items={[
               {

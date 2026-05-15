@@ -15,7 +15,10 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('Abc123456!');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [fullName, setFullName] = useState('');
+  const [fullName, setFullName] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('claw_user_name') || '';
+    return '';
+  });
 
   const handleLogin = useCallback(async () => {
     if (!email || !password) {
@@ -32,6 +35,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
       const data = await res.json();
       if (res.ok && data.token) {
         localStorage.setItem('claw_token', data.token);
+        localStorage.setItem('claw_user_name', data.full_name || '');
         setToken(data.token);
         setFullName(data.full_name || '');
         setShowLogin(false);
@@ -48,6 +52,7 @@ export function useAuth(callbacks: UseAuthCallbacks = {}) {
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('claw_token');
+    localStorage.removeItem('claw_user_name');
     setToken(null);
     setFullName('');
     setShowLogin(true);
