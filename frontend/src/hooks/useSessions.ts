@@ -22,8 +22,8 @@ type SessionSummary = Pick<Session, 'id' | 'title' | 'updated_at'>;
 export function useSessions(token: string | null, onAuthError?: () => void) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
-  const loadingRef = useRef(false);
-  const streamingSessionRef = useRef<string | null>(null);
+  const loadingSessionsRef = useRef<Set<string>>(new Set());
+  const streamingSessionsRef = useRef<Set<string>>(new Set());
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -162,8 +162,12 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
           return list.map(s => s.id === id ? loadedSession : s);
         });
         setActiveSessionId(id);
-        if (streamingSessionRef.current !== id) {
-          loadingRef.current = isActiveTurn;
+        if (!streamingSessionsRef.current.has(id)) {
+          if (isActiveTurn) {
+            loadingSessionsRef.current.add(id);
+          } else {
+            loadingSessionsRef.current.delete(id);
+          }
         }
       }
     } catch (e) {
@@ -212,8 +216,8 @@ export function useSessions(token: string | null, onAuthError?: () => void) {
     activeSessionId,
     setActiveSessionId,
     activeSession,
-    loadingRef,
-    streamingSessionRef,
+    loadingSessionsRef,
+    streamingSessionsRef,
     withAssistantTail,
     updateSessionMessages,
     createNewSession,

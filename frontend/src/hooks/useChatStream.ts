@@ -34,8 +34,8 @@ interface UseChatStreamProps {
   activeSession: Session | undefined;
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
   setActiveSessionId: (id: string) => void;
-  streamingSessionRef: React.MutableRefObject<string | null>;
-  loadingRef: React.MutableRefObject<boolean>;
+  streamingSessionsRef: React.MutableRefObject<Set<string>>;
+  loadingSessionsRef: React.MutableRefObject<Set<string>>;
   setLoading: (loading: boolean) => void;
   withAssistantTail: (messages: Message[]) => Message[];
   updateSessionMessages: (sessionId: string, newMessages: Message[]) => void;
@@ -55,8 +55,8 @@ export function useChatStream({
   activeSession,
   setSessions,
   setActiveSessionId,
-  streamingSessionRef,
-  loadingRef,
+  streamingSessionsRef,
+  loadingSessionsRef,
   setLoading,
   withAssistantTail,
   updateSessionMessages,
@@ -73,35 +73,50 @@ export function useChatStream({
   const [currentIteration, setCurrentIteration] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isReceivingReasoningRef = useRef<boolean>(false);
+  const currentStreamSessionRef = useRef<string | null>(null);
 
   const stopMessage = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    // Remove the active session from loading sets
+    const sid = currentStreamSessionRef.current;
+    if (sid) {
+      loadingSessionsRef.current.delete(sid);
+      streamingSessionsRef.current.delete(sid);
+      currentStreamSessionRef.current = null;
+    }
     setLoading(false);
-    loadingRef.current = false;
-    streamingSessionRef.current = null;
     setActiveToolName(null);
     setActiveToolSummary(null);
-  }, [setLoading, loadingRef, streamingSessionRef]);
+  }, [setLoading, loadingSessionsRef, streamingSessionsRef]);
 
-  const setConversationLoading = useCallback((value: boolean) => {
-    loadingRef.current = value;
-    setLoading(value);
-  }, [loadingRef, setLoading]);
+  const setConversationLoading = useCallback((sessionId: string, value: boolean) => {
+    if (value) {
+      loadingSessionsRef.current.add(sessionId);
+    } else {
+      loadingSessionsRef.current.delete(sessionId);
+    }
+    // Only update UI loading state if this is the currently active session
+    if (sessionId === activeSessionId) {
+      setLoading(value);
+    }
+  }, [loadingSessionsRef, setLoading, activeSessionId]);
 
   const sendMessage = useCallback(async (finalInput: string) => {
-    if (!finalInput.trim() || loadingRef.current || !activeSession || !token) return;
-
+    if (!finalInput.trim() || !activeSession || !token) return;
     const sessionId = activeSessionId;
+    // Check if THIS session is already loading (not global)
+    if (loadingSessionsRef.current.has(sessionId)) return;
     const userMsg: Message = { id: generateId(), role: 'user', content: finalInput };
 
     const messagesAfterUser = normalizeHydratedMessages([...activeSession.messages, userMsg]);
     updateSessionMessages(sessionId, messagesAfterUser);
 
-    streamingSessionRef.current = sessionId;
-    setConversationLoading(true);
+    streamingSessionsRef.current.add(sessionId);
+    currentStreamSessionRef.current = sessionId;
+    setConversationLoading(sessionId, true);
 
     const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '' };
     updateSessionMessages(sessionId, [...messagesAfterUser, assistantMsg]);
@@ -141,8 +156,9 @@ export function useChatStream({
         onmessage(ev) {
           if (ev.event === 'done' || ev.data === '[DONE]') {
             streamCompleted = true;
-            streamingSessionRef.current = null;
-            setConversationLoading(false);
+            streamingSessionsRef.current.delete(sessionId);
+            currentStreamSessionRef.current = null;
+            setConversationLoading(sessionId, false);
             setActiveToolName(null);
             setActiveToolSummary(null);
             // Refresh workspace files only; streamed messages are already
@@ -158,7 +174,9 @@ export function useChatStream({
                   s.id === sessionId ? { ...s, id: data.session_id } : s
                 ));
                 setActiveSessionId(data.session_id);
-                streamingSessionRef.current = data.session_id;
+                streamingSessionsRef.current.delete(sessionId);
+                streamingSessionsRef.current.add(data.session_id);
+                currentStreamSessionRef.current = data.session_id;
               }
             } catch {}
             return;
@@ -166,13 +184,15 @@ export function useChatStream({
           if (ev.event === 'runtime_error') {
             if (ev.data.includes('当前会话已有一轮对话正在处理中，请等待上一轮结束后再发送。')) {
               streamCompleted = true;
-              streamingSessionRef.current = null;
+              streamingSessionsRef.current.delete(sessionId);
+              currentStreamSessionRef.current = null;
               void loadSessionDetail(sessionId, token, sessions);
               return;
             }
             streamCompleted = true;
-            streamingSessionRef.current = null;
-            setConversationLoading(false);
+            streamingSessionsRef.current.delete(sessionId);
+            currentStreamSessionRef.current = null;
+            setConversationLoading(sessionId, false);
             setActiveToolName(null);
             setActiveToolSummary(null);
             onError?.(ev.data || 'The agent run failed.');
@@ -331,8 +351,9 @@ export function useChatStream({
           if (!streamCompleted) {
             throw new Error('SSE connection closed before completion');
           }
-          streamingSessionRef.current = null;
-          setConversationLoading(false);
+          streamingSessionsRef.current.delete(sessionId);
+          currentStreamSessionRef.current = null;
+          setConversationLoading(sessionId, false);
           setActiveToolName(null);
           setActiveToolSummary(null);
         },
@@ -340,8 +361,9 @@ export function useChatStream({
           if (!streamCompleted) {
             console.error('SSE Error:', err);
           }
-          streamingSessionRef.current = null;
-          setConversationLoading(false);
+          streamingSessionsRef.current.delete(sessionId);
+          currentStreamSessionRef.current = null;
+          setConversationLoading(sessionId, false);
           setActiveToolName(null);
           setActiveToolSummary(null);
           throw err;
@@ -352,12 +374,13 @@ export function useChatStream({
         console.error('SSE connection error:', err);
         onError?.('Connection failed. Please check your network and try again.');
       }
-      streamingSessionRef.current = null;
-      setConversationLoading(false);
+      streamingSessionsRef.current.delete(sessionId);
+      currentStreamSessionRef.current = null;
+      setConversationLoading(sessionId, false);
       setActiveToolName(null);
       setActiveToolSummary(null);
     }
-  }, [token, sessions, activeSessionId, activeSession, setSessions, setActiveSessionId, streamingSessionRef, loadingRef, setLoading, withAssistantTail, updateSessionMessages, loadSessionDetail, loadWorkspaceFiles, workspaceSubPath, agentMode, onError, onActionRequired, setConversationLoading]);
+  }, [token, sessions, activeSessionId, activeSession, setSessions, setActiveSessionId, streamingSessionsRef, loadingSessionsRef, setLoading, withAssistantTail, updateSessionMessages, loadSessionDetail, loadWorkspaceFiles, workspaceSubPath, agentMode, onError, onActionRequired, setConversationLoading]);
 
   return {
     activeToolName,

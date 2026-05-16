@@ -176,7 +176,7 @@ export default function ChatPage() {
 
   const {
     sessions, setSessions, activeSessionId, setActiveSessionId, activeSession,
-    loadingRef, streamingSessionRef,
+    loadingSessionsRef, streamingSessionsRef,
     withAssistantTail, updateSessionMessages,
     createNewSession, deleteSession, renameSession,
     loadSessionDetail, loadSessions: loadSessionsRaw,
@@ -213,7 +213,7 @@ export default function ChatPage() {
   } = useChatStream({
     token: authToken, sessions, activeSessionId, activeSession,
     setSessions, setActiveSessionId,
-    streamingSessionRef, loadingRef, setLoading,
+    streamingSessionsRef, loadingSessionsRef, setLoading,
     withAssistantTail, updateSessionMessages,
     loadSessionDetail, loadWorkspaceFiles,
     workspaceSubPath,
@@ -309,7 +309,7 @@ export default function ChatPage() {
 
   const sendMessage = (msg?: string) => {
     const rawInput = msg ?? input;
-    if ((!rawInput.trim() && !uploadedFiles.length) || loadingRef.current || !activeSession || !authToken) return;
+    if ((!rawInput.trim() && !uploadedFiles.length) || loadingSessionsRef.current.has(activeSessionId) || !activeSession || !authToken) return;
     let finalInput = rawInput;
     for (const skill of skills) {
       const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
@@ -330,6 +330,12 @@ export default function ChatPage() {
 
   useEffect(() => { if (!skills.length) queueMicrotask(() => void loadSkills()); }, [skills.length]);
   useEffect(() => { if (activeSessionId) void loadWorkspaceFiles(workspaceSubPath || undefined); }, [activeSessionId]);
+  // Sync UI loading state when switching sessions
+  useEffect(() => {
+    if (activeSessionId) {
+      setLoading(loadingSessionsRef.current.has(activeSessionId));
+    }
+  }, [activeSessionId]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -346,7 +352,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!authToken || !activeSessionId || !loading) return;
-    if (streamingSessionRef.current === activeSessionId) return;
+    if (streamingSessionsRef.current.has(activeSessionId)) return;
     const t = window.setInterval(() => void loadSessionDetail(activeSessionId, authToken, sessions), 2000);
     return () => window.clearInterval(t);
   }, [activeSessionId, loading, sessions, authToken]);
