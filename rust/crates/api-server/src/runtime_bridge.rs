@@ -457,9 +457,21 @@ impl WebToolExecutor {
                             false,
                         )
                         .await;
+                        let mut is_error_from_payload = false;
+                        if tool_name == "bash" {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output) {
+                                if let Some(rc) = parsed.get("return_code_interpretation").and_then(|v| v.as_str()) {
+                                    if rc.starts_with("exit_code:") {
+                                        is_error_from_payload = true;
+                                    }
+                                }
+                            }
+                        }
+
                         let sse_data = serde_json::to_string(&serde_json::json!({
                             "tool": tool_name,
                             "result": output,
+                            "error": is_error_from_payload,
                             "artifacts": artifacts
                         }))
                         .unwrap_or_default();
@@ -612,7 +624,7 @@ fn snapshot_workspace(dir: &Path) -> HashMap<String, std::time::SystemTime> {
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !name.starts_with('.') && name != "node_modules"
+            !name.starts_with('.') && name != "node_modules" && name != "target"
         })
         .filter_map(Result::ok)
     {
