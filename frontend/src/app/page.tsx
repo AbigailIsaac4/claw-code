@@ -449,11 +449,7 @@ export default function ChatPage() {
         );
       },
       footer: (content: string, info) => {
-        let fullContent = content || '';
-        if (info.extraInfo?.toolCalls?.length) {
-          fullContent += '\n' + JSON.stringify(info.extraInfo.toolCalls);
-        }
-        const parsed = parseMessageContent(fullContent);
+        const parsed = parseMessageContent(content || '');
         // Combine regex-parsed files and fs-diff artifacts (filtered by extensions)
         const combined = new Set([
           ...parsed.workspaceFiles,
