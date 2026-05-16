@@ -287,7 +287,7 @@ pub async fn chat_completions(
 
         let mut system_prompts = vec![
             "The current working directory is this session's isolated local workspace. Relative file paths resolve against the workspace directory. \
-            IMPORTANT: Always use relative paths (e.g. `script.py`, `./output.xlsx`) when creating files. Never use absolute paths starting with `/` (e.g. `/script.py`) — the sandbox does not permit writing to the system root. \
+            IMPORTANT: Always use relative paths. **CRITICAL**: You MUST save all final result/deliverable files (like `.xlsx`, `.png`, `.docx`, etc.) to the `output/` directory (e.g. `output/report.xlsx`). Create the directory if it doesn't exist. Never use absolute paths starting with `/` (e.g. `/script.py`) — the sandbox does not permit writing to the system root. \
             If a required package is missing, install it locally: `pip install --user <package>` or `npm install <package>` (no `-g`). Never use `sudo` or global installs. \
             When generating matplotlib charts with Chinese text, always set: matplotlib.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'SimHei'] and matplotlib.rcParams['axes.unicode_minus'] = False"
                 .to_string(),

@@ -449,25 +449,7 @@ export default function ChatPage() {
         );
       },
       footer: (content: string, info) => {
-        const parsed = parseMessageContent(content || '');
-        // Combine regex-parsed files and fs-diff artifacts (filtered by extensions)
-        const combined = new Set([
-          ...parsed.workspaceFiles,
-          ...((info.extraInfo?.artifacts || [])
-              .map((f: string) => normalizeWorkspaceFile(f))
-              .filter(Boolean) as string[])
-        ]);
-
-        // Filter out hallucinated or missing files by checking the current real workspace files
-        const validFiles = isSharedView ? Array.from(combined) : Array.from(combined).filter(pf => 
-          workspaceFiles.some(wf => wf.name === pf.split('/').pop() || wf.path === pf || wf.path.endsWith('/' + pf))
-        );
-        if (validFiles.length === 0) return null;
-        return (
-          <div>
-            <WorkspaceFiles files={validFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />
-          </div>
-        );
+        return null;
       },
     },
   };
@@ -534,9 +516,18 @@ export default function ChatPage() {
           role={bubbleRole}
           className="chat-bubble-list"
         />
+        {(() => {
+          const outputFiles = workspaceFiles.filter(f => f.path.startsWith('output/')).map(f => f.path);
+          if (outputFiles.length === 0) return null;
+          return (
+            <div style={{ padding: '0 24px 24px 24px', maxWidth: 840, margin: '0 auto', width: '100%' }}>
+              <WorkspaceFiles files={outputFiles} onDownload={downloadWorkspaceFile} sessionId={activeSessionId} />
+            </div>
+          );
+        })()}
         </>
       ) : (
-        <Flex vertical style={{ maxWidth: 840, flex: 1, justifyContent: 'center' }} gap={16} align="center" className={styles.placeholder}>
+        <Flex vertical style={{ maxWidth: 840, flex: 1, justifyContent: 'center', margin: '0 auto', width: '100%' }} gap={16} align="center" className={styles.placeholder}>
           <Welcome
             variant="borderless"
             icon={<Avatar size={56} icon={<Sparkles size={28} color="#fff" />} style={{ background: '#10a37f' }} />}

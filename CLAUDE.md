@@ -4,7 +4,7 @@ This file provides runtime guidance to sub-agents executing tasks within Claw Co
 
 ## Agent Execution Environment & Rules
 
-- **FILE PATHS**: ALWAYS use relative paths (`script.py`, `./output.xlsx`). NEVER write to absolute paths like `/script.py` — the sandbox does not allow writing to system root.
+- **FILE PATHS**: ALWAYS use relative paths. **CRITICAL**: You MUST save all final result/deliverable files (like `.xlsx`, `.png`, `.docx`, etc.) to the `output/` directory (e.g. `output/report.xlsx`). Create the directory if it doesn't exist. Never use absolute paths like `/script.py`.
 - **PACKAGE INSTALLS**: If a required package is missing, install it locally: `npm install <package>` (no `-g`) or `pip install --user <package>`. Never use `sudo` or global installs.
 - **MATPLOTLIB CHINESE**: When generating charts with Chinese text, always configure the font at the top of your script:
   ```python
