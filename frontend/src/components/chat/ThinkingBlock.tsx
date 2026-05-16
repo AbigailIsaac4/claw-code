@@ -1,6 +1,9 @@
 import React from 'react';
 import { Collapse, theme } from 'antd';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Sparkles } from 'lucide-react';
 
 const { useToken } = theme;
@@ -30,7 +33,7 @@ export const ThinkingBlock: React.FC<Props> = ({ content, isStreaming }) => {
             ),
             children: (
               <div style={{ paddingLeft: 8, borderLeft: `2px solid ${token.colorBorderSecondary}`, marginLeft: 4, maxHeight: 300, overflowY: 'auto', fontSize: 13, lineHeight: 1.7, opacity: 0.85 }}>
-                <ReactMarkdown>{content}</ReactMarkdown>
+                <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content}</ReactMarkdown></div>
               </div>
             )
           }

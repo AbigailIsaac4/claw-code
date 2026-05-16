@@ -69,7 +69,7 @@ const useStyle = createStyles(({ token, css }) => ({
   `,
   sider: css`
     background: #f5f5f5;
-    width: 260px; height: 100%;
+    width: clamp(200px, 20vw, 260px); height: 100%;
     display: flex; flex-direction: column;
     padding: 0 12px; box-sizing: border-box;
     border-right: 1px solid #e2e8f0;
@@ -104,7 +104,7 @@ const useStyle = createStyles(({ token, css }) => ({
   `,
   chatList: css`
     flex: 1; overflow-y: auto; overflow-x: hidden;
-    display: flex; flex-direction: column; align-items: center; width: 100%;
+    display: flex; flex-direction: column; width: 100%;
     background: #ffffff;
     padding-top: ${token.paddingLG}px;
   `,
@@ -141,8 +141,8 @@ const ThinkComponent = memo(({ content, isStreaming, status }: { content?: strin
   if (!content) return null;
   return (
     <Think title={title} loading={loading} blink={isStreaming} style={{ marginBottom: 8 }}>
-      <div style={{ maxHeight: 300, overflowY: 'auto', fontSize: 13, lineHeight: 1.7 }}>
-        <ReactMarkdown>{content}</ReactMarkdown>
+      <div style={{ maxHeight: '35vh', overflowY: 'auto', fontSize: 13, lineHeight: 1.7 }}>
+        <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{content}</ReactMarkdown></div>
       </div>
     </Think>
   );
@@ -530,8 +530,9 @@ export default function ChatPage() {
               extraInfo: { toolCalls: msg.toolCalls, artifacts: msg.artifacts },
             };
           })}
-          styles={{ root: { maxWidth: 860, width: '100%', padding: '0 24px' } }}
+          styles={{ root: { width: '100%', padding: '0 24px' } }}
           role={bubbleRole}
+          className="chat-bubble-list"
         />
         </>
       ) : (
@@ -672,7 +673,7 @@ export default function ChatPage() {
             position: 'absolute', bottom: '100%', left: 0, width: '100%', zIndex: 10,
             marginBottom: 8, padding: '6px 0', background: token.colorBgElevated,
             borderRadius: token.borderRadiusLG, boxShadow: token.boxShadowSecondary,
-            maxHeight: 260, overflowY: 'auto', border: `1px solid ${token.colorBorderSecondary}`,
+            maxHeight: '35vh', overflowY: 'auto', border: `1px solid ${token.colorBorderSecondary}`,
           }}>
             {skillsFiltered.map(skill => {
               const sn = skill.name.includes('/') ? skill.name.split('/').pop()! : skill.name;
@@ -723,6 +724,14 @@ export default function ChatPage() {
             style={{ border: 'none', boxShadow: 'none', background: 'transparent', padding: 0 }}
             styles={{ input: { fontSize: 15 } }}
             suffix={false}
+            onKeyDown={(e: any) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (input.trim() || uploadedFiles.length > 0) {
+                  sendMessage(input);
+                }
+              }
+            }}
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -737,7 +746,7 @@ export default function ChatPage() {
               </Tooltip>
               <Popover
                 content={
-                  <div style={{ maxHeight: 320, overflowY: 'auto', width: 280 }}>
+                  <div style={{ maxHeight: '40vh', overflowY: 'auto', width: 'min(85vw, 280px)' }}>
                     {skills.length === 0 ? (
                       <div style={{ padding: 12, textAlign: 'center' }}><Text type="secondary" style={{ fontSize: 13 }}>No skills available</Text></div>
                     ) : skills.map(skill => {
@@ -797,7 +806,18 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
-      <style>{`.custom-send-btn { display: flex !important; }`}</style>
+      <style>{`
+        .custom-send-btn { display: flex !important; }
+        .chat-bubble-list {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+        .chat-bubble-list > div {
+          max-width: 860px;
+          width: 100%;
+        }
+      `}</style>
       <input type="file" id="file-upload-input" style={{ display: 'none' }} onChange={handleFileUpload} />
     </div>
   );
@@ -817,7 +837,7 @@ export default function ChatPage() {
   return (
     <ChatCtx.Provider value={{ onReload: undefined }}>
       {/* Login modal */}
-      <Modal open={showLogin} closable={false} keyboard={false} mask={{ closable: false }} footer={null} width={400} styles={{ body: { padding: '32px 32px 28px' } }}>
+      <Modal open={showLogin} closable={false} keyboard={false} mask={{ closable: false }} footer={null} width="min(90vw, 400px)" styles={{ body: { padding: '32px 32px 28px' } }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <Avatar size={56} style={{ background: '#10a37f', borderRadius: 14, marginBottom: 16 }} icon={<Sparkles size={28} color="#fff" />} />
           <Typography.Title level={3} style={{ margin: '0 0 8px', color: '#1e293b' }}>Claw Agent</Typography.Title>
@@ -871,7 +891,7 @@ export default function ChatPage() {
       </div>
 
       {/* Action Modal */}
-      <Modal title={<span style={{ fontSize: 18 }}>Permission Request</span>} open={!!actionReq} closable={false} keyboard={false} mask={{ closable: false }} footer={null} width={480}>
+      <Modal title={<span style={{ fontSize: 18 }}>Permission Request</span>} open={!!actionReq} closable={false} keyboard={false} mask={{ closable: false }} footer={null} width="min(90vw, 480px)">
         <p style={{ marginTop: 16, color: token.colorTextSecondary }}>The agent needs approval before running this action.</p>
         <div style={{ background: token.colorFillQuaternary, border: `1px solid ${token.colorBorderSecondary}`, padding: 16, borderRadius: token.borderRadius, margin: '16px 0 24px' }}>
           <p style={{ margin: '0 0 8px' }}><strong>Tool:</strong> <Text code>{actionReq?.tool}</Text></p>

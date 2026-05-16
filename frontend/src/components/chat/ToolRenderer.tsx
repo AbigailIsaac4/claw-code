@@ -3,7 +3,9 @@ import { Typography, theme, Collapse } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { Terminal, FileText, Edit3, Search, Folder, Zap, ListTodo, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 const { Text } = Typography;
 const { useToken } = theme;
 
@@ -101,7 +103,7 @@ const ToolDetailContent: React.FC<{ tool: ToolCall }> = ({ tool }) => {
           <>
             <div style={labelStyle}>Output</div>
             <div style={{ maxHeight: 300, overflowY: 'auto', padding: '8px 12px', background: token.colorFillQuaternary, borderRadius: token.borderRadius, fontSize: 13 }}>
-              <ReactMarkdown>{parsedResult}</ReactMarkdown>
+              <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{parsedResult}</ReactMarkdown></div>
             </div>
           </>
         )}
@@ -118,7 +120,7 @@ const ToolDetailContent: React.FC<{ tool: ToolCall }> = ({ tool }) => {
         <>
           <div style={labelStyle}>Result</div>
           <div style={{ maxHeight: 400, overflowY: 'auto', padding: '8px 12px', background: token.colorFillQuaternary, borderRadius: token.borderRadius, fontSize: 13 }}>
-            <ReactMarkdown>{tool.result}</ReactMarkdown>
+            <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{tool.result}</ReactMarkdown></div>
           </div>
         </>
       )}

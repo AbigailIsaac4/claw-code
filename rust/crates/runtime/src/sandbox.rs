@@ -248,8 +248,10 @@ pub fn build_linux_sandbox_command(
             status.allowed_mounts.join(":"),
         ),
     ];
-    if let Ok(path) = env::var("PATH") {
-        env.push(("PATH".to_string(), path));
+    for var_name in &["PATH", "PYTHONPATH", "NODE_PATH", "npm_config_prefix", "LANG", "LC_ALL"] {
+        if let Ok(val) = env::var(var_name) {
+            env.push((var_name.to_string(), val));
+        }
     }
 
     Some(LinuxSandboxCommand {

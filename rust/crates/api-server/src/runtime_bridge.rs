@@ -901,8 +901,14 @@ fn normalize_write_path_field(
     if let Some(Value::String(value)) = object.get_mut(field) {
         let trimmed = value.trim().replace('\\', "/");
         if trimmed.starts_with('/') || (trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':') {
-            // Absolute path — pass through; the tool layer will use it directly.
-            *value = trimmed;
+            // Absolute path — redirect into workspace to prevent writing to system root.
+            // Strip leading path components and keep only the filename.
+            let filename = std::path::Path::new(&trimmed)
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_else(|| trimmed.clone());
+            let resolved = resolve_workspace_write_path(workspace, &filename)?;
+            *value = resolved.absolute_path.to_string_lossy().into_owned();
         } else {
             let resolved = resolve_workspace_write_path(workspace, value)?;
             *value = resolved.absolute_path.to_string_lossy().into_owned();
