@@ -13,6 +13,7 @@ export interface HydratedMessage {
   content: string;
   toolCalls?: HydratedToolCall[];
   streaming?: boolean;
+  artifacts?: string[];
 }
 
 interface NormalizeOptions {

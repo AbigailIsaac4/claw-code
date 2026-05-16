@@ -22,11 +22,11 @@ const WORKSPACE_FILE_PATTERNS = [
   new RegExp(`\\\`((?:\\/workspace\\/|workspace\\/)?${namePartWithSpace}(?:\\/${namePartWithSpace})+)\\\``, 'g'),
   
   // 匹配普通文本中的文件路径 (必须带后缀名或路径，不支持带空格)
-  new RegExp(`(?:^|[\\s(])((?:\\/workspace\\/|workspace\\/)?${namePart}(?:\\/${namePart})+\\.${namePart})(?=$|[\\s),.;:])`, 'gm'),
-  new RegExp(`(?:^|[\\s(])((?:\\/workspace\\/|workspace\\/)?${namePart}\\.[A-Za-z0-9]+)(?=$|[\\s),.;:])`, 'gm'),
+  new RegExp(`(?:^|[\\s(|<>"'])((?:\\/workspace\\/|workspace\\/)?${namePart}(?:\\/${namePart})+\\.${namePart})(?=$|[\\s),.;:|>"'])`, 'gm'),
+  new RegExp(`(?:^|[\\s(|<>"'])((?:\\/workspace\\/|workspace\\/)?${namePart}\\.[A-Za-z0-9]+)(?=$|[\\s),.;:|>"'])`, 'gm'),
 ];
 
-function normalizeWorkspaceFile(candidate: string): string | null {
+export function normalizeWorkspaceFile(candidate: string): string | null {
   const trimmed = candidate.trim().replace(/\\/g, '/');
   if (!trimmed || trimmed.includes('://')) {
     return null;

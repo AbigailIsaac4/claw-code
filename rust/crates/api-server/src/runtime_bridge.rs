@@ -443,7 +443,7 @@ impl WebToolExecutor {
         });
     }
 
-    fn send_tool_result(&self, tool_name: &str, result: &Result<String, String>) {
+    fn send_tool_result(&self, tool_name: &str, result: &Result<String, String>, artifacts: Vec<String>) {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 match result {
@@ -459,7 +459,8 @@ impl WebToolExecutor {
                         .await;
                         let sse_data = serde_json::to_string(&serde_json::json!({
                             "tool": tool_name,
-                            "result": output
+                            "result": output,
+                            "artifacts": artifacts
                         }))
                         .unwrap_or_default();
                         let _ = self
@@ -479,7 +480,8 @@ impl WebToolExecutor {
                         .await;
                         let sse_data = serde_json::to_string(&serde_json::json!({
                             "tool": tool_name,
-                            "error": error
+                            "error": error,
+                            "artifacts": artifacts
                         }))
                         .unwrap_or_default();
                         let _ = self
@@ -531,13 +533,18 @@ impl ToolExecutor for WebToolExecutor {
             }
         });
 
+        let pre_snapshot = snapshot_workspace(&self.workspace_dir);
+
         let result = self.execute_registry_tool(tool_name, input);
+
+        let post_snapshot = snapshot_workspace(&self.workspace_dir);
+        let artifacts = diff_snapshots(&pre_snapshot, &post_snapshot);
 
         // Stop heartbeat
         heartbeat_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = heartbeat_handle.join();
 
-        self.send_tool_result(tool_name, &result);
+        self.send_tool_result(tool_name, &result, artifacts);
         result.map_err(ToolError::new)
     }
 }
@@ -594,6 +601,48 @@ impl PermissionPrompter for WebPermissionPrompter {
             },
         }
     }
+}
+
+fn snapshot_workspace(dir: &Path) -> HashMap<String, std::time::SystemTime> {
+    let mut map = HashMap::new();
+    if !dir.exists() {
+        return map;
+    }
+    for entry in walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            !name.starts_with('.') && name != "node_modules"
+        })
+        .filter_map(Result::ok)
+    {
+        if entry.file_type().is_file() {
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(mtime) = metadata.modified() {
+                    let rel_path = entry.path().strip_prefix(dir).unwrap_or(entry.path());
+                    map.insert(rel_path.to_string_lossy().into_owned().replace('\\', "/"), mtime);
+                }
+            }
+        }
+    }
+    map
+}
+
+fn diff_snapshots(
+    pre: &HashMap<String, std::time::SystemTime>,
+    post: &HashMap<String, std::time::SystemTime>,
+) -> Vec<String> {
+    let mut diff = Vec::new();
+    for (path, mtime) in post {
+        if let Some(old_mtime) = pre.get(path) {
+            if mtime > old_mtime {
+                diff.push(path.clone());
+            }
+        } else {
+            diff.push(path.clone());
+        }
+    }
+    diff
 }
 
 fn tool_input_to_string(input: Value) -> String {

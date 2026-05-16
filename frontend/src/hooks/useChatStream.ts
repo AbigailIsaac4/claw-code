@@ -308,7 +308,13 @@ export function useChatStream({
                         result: data.result,
                         error: data.error
                       };
-                      nextMsgs[nextMsgs.length - 1] = { ...lastMsg, toolCalls: calls };
+                      nextMsgs[nextMsgs.length - 1] = { 
+                        ...lastMsg, 
+                        toolCalls: calls,
+                        artifacts: data.artifacts?.length 
+                          ? Array.from(new Set([...(lastMsg.artifacts || []), ...data.artifacts]))
+                          : lastMsg.artifacts
+                      };
                     }
                   }
                   return { ...s, messages: nextMsgs };

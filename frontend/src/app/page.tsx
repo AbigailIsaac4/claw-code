@@ -9,11 +9,11 @@ import {
   Trash2, CircleUser, Lock, Paperclip,
   Bot, Copy, Folder, FileText,
   RefreshCw, Globe, RefreshCcw, LayoutGrid,
-  ChevronRight, Sparkles, MoreHorizontal, Edit3, Info
+  ChevronRight, Sparkles, MoreHorizontal, Edit3, Info, LogOut
 } from 'lucide-react';
 import { ArrowUpOutlined, ShareAltOutlined, SettingOutlined } from '@ant-design/icons';
 import { createStyles } from 'antd-style';
-import { parseMessageContent } from '@/utils/messageParser';
+import { parseMessageContent, normalizeWorkspaceFile } from '@/utils/messageParser';
 import { PlanStepsCard } from '@/components/chat/PlanStepsCard';
 import { WorkspaceFiles, getFileIcon } from '@/components/chat/WorkspaceFiles';
 import { ToolRenderer } from '@/components/chat/ToolRenderer';
@@ -449,9 +449,21 @@ export default function ChatPage() {
         );
       },
       footer: (content: string, info) => {
-        const parsed = parseMessageContent(content || '');
+        let fullContent = content || '';
+        if (info.extraInfo?.toolCalls?.length) {
+          fullContent += '\n' + JSON.stringify(info.extraInfo.toolCalls);
+        }
+        const parsed = parseMessageContent(fullContent);
+        // Combine regex-parsed files and fs-diff artifacts (filtered by extensions)
+        const combined = new Set([
+          ...parsed.workspaceFiles,
+          ...((info.extraInfo?.artifacts || [])
+              .map((f: string) => normalizeWorkspaceFile(f))
+              .filter(Boolean) as string[])
+        ]);
+
         // Filter out hallucinated or missing files by checking the current real workspace files
-        const validFiles = isSharedView ? parsed.workspaceFiles : parsed.workspaceFiles.filter(pf => 
+        const validFiles = isSharedView ? Array.from(combined) : Array.from(combined).filter(pf => 
           workspaceFiles.some(wf => wf.name === pf.split('/').pop() || wf.path === pf || wf.path.endsWith('/' + pf))
         );
         if (validFiles.length === 0) return null;
@@ -496,7 +508,7 @@ export default function ChatPage() {
           <Text strong style={{ fontSize: 13, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#1e293b' }}>{fullName || 'User'}</Text>
         </div>
         <Tooltip title="Sign out">
-          <Button type="text" size="small" onClick={handleLogout} icon={<CircleUser size={16} />} style={{ color: token.colorTextQuaternary }} />
+          <Button type="text" size="small" onClick={handleLogout} icon={<LogOut size={16} />} style={{ color: token.colorTextQuaternary }} />
         </Tooltip>
       </div>
     </div>
@@ -519,7 +531,7 @@ export default function ChatPage() {
               content: msg.content || ' ',
               loading: isStreaming && isEmpty,
               status: isStreaming ? 'loading' : undefined,
-              extraInfo: { toolCalls: msg.toolCalls },
+              extraInfo: { toolCalls: msg.toolCalls, artifacts: msg.artifacts },
             };
           })}
           styles={{ root: { maxWidth: 860, width: '100%', padding: '0 24px' } }}
@@ -888,7 +900,7 @@ export default function ChatPage() {
       <Modal title="任务详情" open={isDetailsModalOpen} footer={null} onCancel={() => setIsDetailsModalOpen(false)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div><strong>任务名：</strong>{activeSession?.title}</div>
-          <div><strong>创建时间：</strong>{activeSession?.updated_at ? new Date(activeSession.updated_at).toLocaleString() : '未知'}</div>
+          <div><strong>创建时间：</strong>{activeSession?.updated_at ? new Date(activeSession.updated_at.replace(' ', 'T') + (activeSession.updated_at.includes('Z') ? '' : 'Z')).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '未知'}</div>
         </div>
       </Modal>
 
