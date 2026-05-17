@@ -295,7 +295,19 @@ pub fn model_token_limit(model: &str) -> Option<ModelTokenLimit> {
             max_output_tokens: 16_384,
             context_window_tokens: 256_000,
         }),
-        _ => None,
+        _ => {
+            // Prefix-based fallback for models served via OpenAI-compat (vLLM, etc.)
+            // where the .env model name may be a short alias like "qwen".
+            if canonical.starts_with("qwen") {
+                // Qwen 3.x series: 131K context, 32K safe max output for vLLM
+                Some(ModelTokenLimit {
+                    max_output_tokens: 32_768,
+                    context_window_tokens: 131_072,
+                })
+            } else {
+                None
+            }
+        }
     }
 }
 

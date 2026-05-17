@@ -103,6 +103,13 @@ impl ApiClient for WebApiClient {
             .collect::<Vec<_>>();
 
         let model_name = std::env::var("OPENAI_MODEL_NAME").unwrap_or_else(|_| "qwen".to_string());
+        // Compute max_tokens before moving model_name into the struct.
+        // The old default of 8192 was far too low — tool calls with large file
+        // content were truncated mid-JSON, causing "missing field" errors.
+        let max_tokens = std::env::var("MAX_OUTPUT_TOKENS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| api::max_tokens_for_model(&model_name));
         let message_request = MessageRequest {
             model: model_name,
             messages: mapped_messages,
@@ -119,10 +126,7 @@ impl ApiClient for WebApiClient {
             ),
             tool_choice: Some(api::ToolChoice::Auto),
             stream: true,
-            max_tokens: std::env::var("MAX_OUTPUT_TOKENS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(8192),
+            max_tokens,
             ..Default::default()
         };
 
