@@ -248,7 +248,18 @@ pub fn build_linux_sandbox_command(
             status.allowed_mounts.join(":"),
         ),
     ];
-    for var_name in &["PATH", "PYTHONPATH", "NODE_PATH", "npm_config_prefix", "LANG", "LC_ALL"] {
+    // Hardcode package paths so the sandbox always finds pre-installed libraries,
+    // regardless of whether the parent api-server process has these vars set.
+    env.push(("PYTHONPATH".to_string(),
+        env::var("PYTHONPATH").unwrap_or_else(|_|
+            "/storage/users/agent/.local/lib/python3.10/site-packages".to_string())));
+    env.push(("NODE_PATH".to_string(),
+        env::var("NODE_PATH").unwrap_or_else(|_|
+            "/storage/users/agent/.nvm/versions/node/v25.9.0/lib/node_modules".to_string())));
+    env.push(("npm_config_prefix".to_string(),
+        env::var("npm_config_prefix").unwrap_or_else(|_|
+            "/storage/users/agent/.nvm/versions/node/v25.9.0".to_string())));
+    for var_name in &["PATH", "LANG", "LC_ALL"] {
         if let Ok(val) = env::var(var_name) {
             env.push((var_name.to_string(), val));
         }
