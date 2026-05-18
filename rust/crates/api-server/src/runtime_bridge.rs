@@ -130,6 +130,12 @@ impl ApiClient for WebApiClient {
             ..Default::default()
         };
 
+        // Dynamically reduce max_tokens when the conversation has grown large,
+        // so that input_tokens + max_tokens stays within the model's context window.
+        // Without this, long conversations hit a 400 "context length exceeded" error.
+        let mut message_request = message_request;
+        message_request.max_tokens = api::clamp_max_tokens_for_request(&message_request);
+
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let mut stream = self

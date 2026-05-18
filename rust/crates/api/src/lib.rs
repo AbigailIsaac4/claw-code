@@ -24,8 +24,8 @@ pub use providers::openai_compat::{
     model_rejects_is_error_field, translate_message, OpenAiCompatClient, OpenAiCompatConfig,
 };
 pub use providers::{
-    detect_provider_kind, max_tokens_for_model, max_tokens_for_model_with_override,
-    resolve_model_alias, ProviderKind,
+    clamp_max_tokens_for_request, detect_provider_kind, max_tokens_for_model,
+    max_tokens_for_model_with_override, resolve_model_alias, ProviderKind,
 };
 pub use sse::{parse_frame, SseParser};
 pub use types::{

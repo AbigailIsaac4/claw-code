@@ -331,7 +331,37 @@ pub fn preflight_message_request(request: &MessageRequest) -> Result<(), ApiErro
     Ok(())
 }
 
-fn estimate_message_request_input_tokens(request: &MessageRequest) -> u32 {
+/// Dynamically clamp `max_tokens` so that `input_tokens + max_tokens` fits
+/// within the model's context window.  Returns the original `max_tokens` when
+/// the model is unknown or the request already fits.  A minimum of 4096 output
+/// tokens is always reserved so the model can still produce a useful response;
+/// if even that doesn't fit the caller should compact the conversation first.
+#[must_use]
+pub fn clamp_max_tokens_for_request(request: &MessageRequest) -> u32 {
+    const MIN_OUTPUT_TOKENS: u32 = 4096;
+
+    let Some(limit) = model_token_limit(&request.model) else {
+        return request.max_tokens;
+    };
+
+    let estimated_input = estimate_message_request_input_tokens(request);
+    let headroom = limit.context_window_tokens.saturating_sub(estimated_input);
+    let clamped = request.max_tokens.min(headroom).max(MIN_OUTPUT_TOKENS);
+
+    if clamped < request.max_tokens {
+        eprintln!(
+            "[clamp_max_tokens] Reduced max_tokens from {} to {} (input≈{}, window={})",
+            request.max_tokens,
+            clamped,
+            estimated_input,
+            limit.context_window_tokens,
+        );
+    }
+
+    clamped
+}
+
+pub fn estimate_message_request_input_tokens(request: &MessageRequest) -> u32 {
     let mut estimate = estimate_serialized_tokens(&request.messages);
     estimate = estimate.saturating_add(estimate_serialized_tokens(&request.system));
     estimate = estimate.saturating_add(estimate_serialized_tokens(&request.tools));
