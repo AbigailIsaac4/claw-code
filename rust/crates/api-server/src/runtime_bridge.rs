@@ -56,8 +56,33 @@ impl ApiClient for WebApiClient {
             });
         });
 
-        let mapped_messages = request
-            .messages
+        let messages_to_send = {
+            let mut temp_session = runtime::Session::new();
+            temp_session.messages = request.messages.clone();
+            
+            let config = runtime::compact::CompactionConfig {
+                preserve_recent_messages: 15,
+                max_estimated_tokens: 80_000,
+            };
+            
+            if runtime::compact::should_compact(&temp_session, config) {
+                let result = runtime::compact::compact_session(&temp_session, config);
+                let _ = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        let _ = self.tx.send(
+                            Event::default()
+                                .event("runtime_warning")
+                                .data(format!("Auto-compacted {} earlier messages to maintain optimal context window performance.", result.removed_message_count))
+                        ).await;
+                    });
+                });
+                result.compacted_session.messages
+            } else {
+                request.messages.clone()
+            }
+        };
+
+        let mapped_messages = messages_to_send
             .iter()
             .filter_map(|message| {
                 let role = match message.role {
