@@ -512,7 +512,7 @@ export default function ChatPage() {
               extraInfo: { toolCalls: msg.toolCalls, artifacts: msg.artifacts },
             };
           })}
-          styles={{ root: { width: '100%', padding: '0 24px' } }}
+          styles={{ root: { width: '100%', maxWidth: 860, margin: '0 auto', padding: '0 24px' } }}
           role={bubbleRole}
           className="chat-bubble-list"
         />
