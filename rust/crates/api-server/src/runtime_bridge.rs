@@ -198,6 +198,30 @@ impl ApiClient for WebApiClient {
                                     events.push(AssistantEvent::ToolUse { id, name, input });
                                 }
                             }
+                            api::StreamEvent::MessageDelta(delta) => {
+                                // Detect output truncation (finish_reason=length)
+                                if delta.delta.stop_reason.as_deref() == Some("length") {
+                                    tracing::warn!(
+                                        "LLM output truncated (finish_reason=length) for session {}. \
+                                         max_tokens may be too low or the model tried to generate excessive content.",
+                                        self.session_id
+                                    );
+                                    // Discard any in-flight tool call — its JSON is certainly incomplete
+                                    if pending_tool.take().is_some() {
+                                        tracing::warn!(
+                                            "Discarded incomplete tool call due to output truncation"
+                                        );
+                                    }
+                                    // Notify frontend
+                                    let warn_data = serde_json::to_string(&serde_json::json!({
+                                        "type": "output_truncated",
+                                        "message": "模型输出因 token 限制被截断，部分内容可能不完整。"
+                                    })).unwrap_or_default();
+                                    let _ = self.tx
+                                        .send(Event::default().event("runtime_warning").data(warn_data))
+                                        .await;
+                                }
+                            }
                             _ => {}
                         },
                         Ok(None) => break,
@@ -299,13 +323,25 @@ impl WebToolExecutor {
             Err(_) => {
                 // Attempt to repair common model output malformations
                 let repaired = repair_json(normalized_input);
-                serde_json::from_str(&repaired).map_err(|error| {
-                    tracing::error!(
-                        "Failed to parse ToolUse input. Raw input: {:?}",
-                        normalized_input
-                    );
-                    format!("Invalid input JSON: {error}")
-                })?
+                match serde_json::from_str(&repaired) {
+                    Ok(v) => {
+                        tracing::warn!(
+                            "Repaired malformed tool JSON for '{}'. This often indicates \
+                             output truncation (finish_reason=length). Original len={}, Repaired len={}",
+                            tool_name,
+                            normalized_input.len(),
+                            repaired.len()
+                        );
+                        v
+                    }
+                    Err(error) => {
+                        tracing::error!(
+                            "Failed to parse ToolUse input even after repair. Raw input: {:?}",
+                            normalized_input
+                        );
+                        return Err(format!("Invalid input JSON: {error}"));
+                    }
+                }
             }
         };
 

@@ -210,7 +210,7 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
 #[must_use]
 pub fn build_linux_sandbox_command(
     command: &str,
-    cwd: &Path,
+    _cwd: &Path,
     status: &SandboxStatus,
 ) -> Option<LinuxSandboxCommand> {
     if !cfg!(target_os = "linux")
@@ -236,8 +236,16 @@ pub fn build_linux_sandbox_command(
     args.push("-lc".to_string());
     args.push(command.to_string());
 
+    // HOME should be the real user home — NOT the workspace directory.
+    // Setting HOME=workspace caused:
+    //   - pip cache nested under workspace (.cache/pip/...)
+    //   - pip install --user writing to workspace/.local/ (lost per session)
+    //   - Agent thinking it's /root and trying `cd /root`
+    // The workspace is still the process cwd, so relative paths work fine.
+    let agent_home = env::var("CLAW_AGENT_HOME")
+        .unwrap_or_else(|_| "/storage/users/agent".to_string());
     let mut env = vec![
-        ("HOME".to_string(), cwd.display().to_string()),
+        ("HOME".to_string(), agent_home),
         ("TMPDIR".to_string(), "/tmp".to_string()),
         (
             "CLAWD_SANDBOX_FILESYSTEM_MODE".to_string(),

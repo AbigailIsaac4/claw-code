@@ -410,12 +410,18 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
     vec![
         ToolSpec {
             name: "bash",
-            description: "Execute a shell command in the current workspace.",
+            description: "Execute a shell command in the current workspace. \
+                The working directory is the session workspace. Always use relative paths. \
+                NEVER use: apt-get, apt, yum, sudo, or any system package manager (sandbox has no root). \
+                NEVER cd to absolute paths like /tmp, /root, /home. \
+                For missing Python packages: pip install --user <pkg>. For Node: npm install <pkg>. \
+                If a system CLI tool (pandoc, ffmpeg, etc.) is unavailable, use a Python alternative instead. \
+                Save all output/deliverable files to the output/ directory (mkdir -p output first).",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "command": { "type": "string" },
-                    "timeout": { "type": "integer", "minimum": 1 },
+                    "command": { "type": "string", "description": "The shell command to execute. Use relative paths only." },
+                    "timeout": { "type": "integer", "minimum": 1, "description": "Max seconds before the command is killed. Default: 120." },
                     "description": { "type": "string" },
                     "run_in_background": { "type": "boolean" },
                     "dangerouslyDisableSandbox": { "type": "boolean" },
@@ -431,13 +437,14 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "read_file",
-            description: "Read a text file from the workspace.",
+            description: "Read the contents of a file in the workspace. Use relative paths. \
+                Returns the file text with line numbers. Use offset/limit for large files.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
-                    "offset": { "type": "integer", "minimum": 0 },
-                    "limit": { "type": "integer", "minimum": 1 }
+                    "path": { "type": "string", "description": "Relative path within the workspace." },
+                    "offset": { "type": "integer", "minimum": 0, "description": "Line offset to start reading from (0-indexed)." },
+                    "limit": { "type": "integer", "minimum": 1, "description": "Max number of lines to read." }
                 },
                 "required": ["path"],
                 "additionalProperties": false
@@ -446,12 +453,14 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "write_file",
-            description: "Write a text file in the workspace.",
+            description: "Create or overwrite a file in the workspace. Use relative paths. \
+                For deliverable files (xlsx, docx, png, etc.), always write to output/ directory. \
+                Example: output/report.xlsx. Create the directory first with mkdir -p output if needed.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string" },
-                    "content": { "type": "string" }
+                    "path": { "type": "string", "description": "Relative path within the workspace. Use output/ for deliverables." },
+                    "content": { "type": "string", "description": "The full file content to write." }
                 },
                 "required": ["path", "content"],
                 "additionalProperties": false
@@ -460,7 +469,9 @@ pub fn mvp_tool_specs() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "edit_file",
-            description: "Replace text in a workspace file.",
+            description: "Replace a specific text string in an existing workspace file. \
+                The old_string must match exactly (including whitespace and indentation). \
+                Use read_file first to see the current content if you are unsure of exact text.",
             input_schema: json!({
                 "type": "object",
                 "properties": {

@@ -287,8 +287,10 @@ pub async fn chat_completions(
 
         let mut system_prompts = vec![
             "The current working directory is this session's isolated local workspace. Relative file paths resolve against the workspace directory. \
-            IMPORTANT: Always use relative paths. **CRITICAL**: You MUST save all final result/deliverable files (like `.xlsx`, `.png`, `.docx`, etc.) to the `output/` directory (e.g. `output/report.xlsx`). Create the directory if it doesn't exist. Never use absolute paths starting with `/` (e.g. `/script.py`) — the sandbox does not permit writing to the system root. \
-            If a required package is missing, install it locally: `pip install --user <package>` or `npm install <package>` (no `-g`). Never use `sudo` or global installs. \
+            IMPORTANT: Always use relative paths. **CRITICAL**: You MUST save all final result/deliverable files (like `.xlsx`, `.png`, `.docx`, etc.) to the `output/` directory (e.g. `output/report.xlsx`). Create the directory with `mkdir -p output` first. Never use absolute paths starting with `/` (e.g. `/script.py`). Never `cd` to absolute paths like `/tmp`, `/root`, or `/home`. \
+            FORBIDDEN: Never use `apt-get`, `apt`, `yum`, `sudo`, or any system package manager — the sandbox has no root privileges and these will always fail. \
+            If a required Python/Node package is missing, install locally: `pip install --user <package>` or `npm install <package>`. \
+            If a task needs a system-level CLI tool (like pandoc, ffmpeg, etc.) that is not installed, do NOT attempt to install it. Instead, use a pure Python alternative (e.g. `python-docx` for Word files, `openpyxl` for Excel, `Pillow` for images, `reportlab`/`fpdf` for PDF). \
             When generating matplotlib charts with Chinese text, always set: matplotlib.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'SimHei'] and matplotlib.rcParams['axes.unicode_minus'] = False"
                 .to_string(),
             // Interactive agent behavior: use AskUserQuestion to involve the user
